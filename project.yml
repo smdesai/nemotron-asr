@@ -1,0 +1,165 @@
+name: NemotronASR
+options:
+  bundleIdPrefix: com.sdesai
+  deploymentTarget:
+    iOS: "27.0"
+    watchOS: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_LANGUAGE: en
+    # Personal team (Apple Development: Sachin Desai). Set here so it survives
+    # `xcodegen generate` — applies to both the iOS and watchOS targets.
+    DEVELOPMENT_TEAM: TA92TEWDS4
+
+targets:
+  NemotronASR:
+    type: application
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Sources
+      # Vendored FluidAudio ASR core (the same standalone subset the watch
+      # compiles). Built directly into the app so there is NO dependency on the
+      # external FluidAudio Swift package — everything is self-contained here.
+      - path: NemotronWatch/Vendored
+      # Shared with the widget extension: Live Activity attributes + Stop intent.
+      - path: Shared
+      - path: Resources/Assets.xcassets
+      # Bundled CoreML model variants. The repo is gated on HuggingFace, so the
+      # models ship inside the app and load from the bundle (no runtime
+      # download). `type: folder` adds a folder reference so the entire
+      # <ship>/<tier>ms/<model>.mlmodelc tree is copied verbatim.
+      - path: Resources/Models
+        type: folder
+        buildPhase: resources
+    dependencies:
+      # Live Activity UI. `embed: true` copies the extension into the app bundle.
+      - target: NemotronASRWidgets
+        embed: true
+    scheme:
+      testTargets: []
+      gatherCoverageData: false
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Nemotron ASR
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        # Live Activity support + keep the mic/ASR running when backgrounded so
+        # the lock-screen / Dynamic Island transcript stays live.
+        NSSupportsLiveActivities: true
+        UIBackgroundModes:
+          - audio
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: >-
+          Nemotron ASR uses the microphone to transcribe your speech in real time.
+          Audio is processed entirely on-device and is never uploaded.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sdesai.NemotronASR
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        # Pick your team in Xcode ▸ Signing & Capabilities. To make it survive
+        # `xcodegen generate`, put your 10-char Team ID here, e.g.:
+        #   DEVELOPMENT_TEAM: ABCDE12345
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+        SWIFT_VERSION: "5.0"
+
+  # Live Activity widget extension: renders the transcription Live Activity on
+  # the lock screen + Dynamic Island. Links only system frameworks (no
+  # FluidAudio) and shares the Shared/ folder (ActivityAttributes + Stop intent)
+  # with the app. Embedded into the app via the NemotronASR dependency above.
+  NemotronASRWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Widgets
+      - path: Shared
+    info:
+      path: Generated/WidgetsInfo.plist
+      properties:
+        CFBundleDisplayName: Nemotron ASR
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sdesai.NemotronASR.Widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "5.0"
+
+  # watchOS port. FluidAudio ships no watchOS slice, so this target VENDORS the
+  # needed FluidAudio source files (NemotronWatch/Vendored) and compiles them
+  # directly — it intentionally does NOT depend on the FluidAudio package. It
+  # runs the CoreML pipeline: the multilingual 2240ms split encoder + bare
+  # decoder/joint staged as pre-compiled .mlmodelc into NemotronWatchModels/
+  # (see scripts/fetch-watch-asr-models.sh), loaded from the app bundle on
+  # launch. (The Core AI path was abandoned for now: the watchOS 27 beta's
+  # Core AI compiler has no m11 SoC backend — "Unsupported SoC (m11)".)
+  NemotronWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: NemotronWatch
+        excludes:
+          - Info.plist
+      # Folder reference: pre-compiled .mlmodelc bundles are copied verbatim
+      # into a NemotronWatchModels/ subdirectory of the app bundle.
+      - path: NemotronWatchModels
+        type: folder
+        buildPhase: resources
+    info:
+      path: NemotronWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Nemotron ASR Watch
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WKApplication: true
+        WKWatchOnly: true
+        UIBackgroundModes:
+          - audio
+        NSMicrophoneUsageDescription: >-
+          Nemotron ASR uses the microphone to transcribe your speech in real
+          time. Audio is processed entirely on-device and is never uploaded.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sdesai.NemotronASR.watch
+        TARGETED_DEVICE_FAMILY: "4"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: NemotronWatch/Info.plist
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        # `import CoreAI` on watchOS pulls in CoreAIRuntime.swiftinterface, which
+        # `public import`s Metal + IOSurface — modules the watchOS 27.0 SDK omits.
+        # SDKShims/watchos provides compile-time-only stub frameworks (protocol
+        # names for CoreAI's optional Metal-interop API; never linked/used on the
+        # ANE/CPU path) so the interface typechecks. Search LAST so real SDK
+        # frameworks always win where they exist.
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/SDKShims/watchos
+    scheme:
+      testTargets: []

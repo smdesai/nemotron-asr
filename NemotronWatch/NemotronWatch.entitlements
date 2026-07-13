@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App-group container used as the Core AI model cache: the default
+	     AIModelCache location fails with ENOENT on the watchOS 27 beta, so
+	     the specializer is pointed at the app-group cache instead. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.sdesai.NemotronASR</string>
+	</array>
+</dict>
+</plist>
