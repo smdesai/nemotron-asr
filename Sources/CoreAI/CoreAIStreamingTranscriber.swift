@@ -1,6 +1,7 @@
 import Accelerate
 import CoreAI
 import Foundation
+
 // The tokenizer comes from the FluidAudio package on iOS; the watch target
 // compiles the vendored copy (NemotronWatch/Vendored) directly, so the type is
 // in-module there and no import is needed.
@@ -184,13 +185,15 @@ final class CoreAIStreamingTranscriber {
         // caches — that cold-started every chunk and garbled boundary words.)
         let chunkSamples = chunkMelFrames * hop
         let nChunks = (samples.count + chunkSamples - 1) / max(1, chunkSamples)
-        print("[CoreAI-T] transcribe: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count)/16000))s), "
-            + "chunkSamples=\(chunkSamples), \(nChunks) chunks, blankIdx=\(blankIdx), promptId=\(promptId)")
+        print(
+            "[CoreAI-T] transcribe: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count)/16000))s), "
+                + "chunkSamples=\(chunkSamples), \(nChunks) chunks, blankIdx=\(blankIdx), promptId=\(promptId)"
+        )
         var pos = 0
         var chunkIdx = 0
         while pos < samples.count {
             let end = min(pos + chunkSamples, samples.count)
-            var chunk = Array(samples[pos..<end])
+            var chunk = Array(samples[pos ..< end])
             if chunk.count < chunkSamples {
                 chunk.append(contentsOf: [Float](repeating: 0, count: chunkSamples - chunk.count))
             }
@@ -198,8 +201,9 @@ final class CoreAIStreamingTranscriber {
             let before = accumulatedTokenIds.count
             try await processChunk(chunk)
             let dt = Date().timeIntervalSince(t0)
-            print("[CoreAI-T] chunk \(chunkIdx)/\(nChunks): +\(accumulatedTokenIds.count - before) tokens "
-                + "(total \(accumulatedTokenIds.count)) in \(String(format: "%.2f", dt))s")
+            print(
+                "[CoreAI-T] chunk \(chunkIdx)/\(nChunks): +\(accumulatedTokenIds.count - before) tokens "
+                    + "(total \(accumulatedTokenIds.count)) in \(String(format: "%.2f", dt))s")
             // Stream the running transcript after each chunk (only when it grew).
             if let onPartial, accumulatedTokenIds.count != before {
                 onPartial(tokenizer.decode(ids: accumulatedTokenIds).text)
@@ -232,7 +236,8 @@ final class CoreAIStreamingTranscriber {
             mel: window, frames: totalMelFrames, promptId: promptId)
         // encoded is row-major [1, 1024, T_enc]; T_enc = shape[2].
         guard shape.count == 3 else {
-            print("[CoreAI-T] unexpected encoder shape \(shape)"); return
+            print("[CoreAI-T] unexpected encoder shape \(shape)")
+            return
         }
         let tEnc = shape[2]
 
@@ -244,13 +249,14 @@ final class CoreAIStreamingTranscriber {
         // ANE dispatch overhead amortized over all T frames.
         var t = 0
         var symbolsAtT = 0
-        var batchedLogits: [Float]? = nil          // logits[t*vocab + v] for the current state
+        var batchedLogits: [Float]? = nil  // logits[t*vocab + v] for the current state
         var stepHOut = h
         var stepCOut = c
         while t < tEnc {
             if batchedLogits == nil {
                 if let fused = try await runner.decodeJointStep(
-                    token: lastToken, h: h, c: c, encoder: encoded, tEnc: tEnc) {
+                    token: lastToken, h: h, c: c, encoder: encoded, tEnc: tEnc)
+                {
                     // fused decoder+joint: one dispatch per decoder state
                     batchedLogits = fused.logits
                     stepHOut = fused.hOut
@@ -267,7 +273,7 @@ final class CoreAIStreamingTranscriber {
             }
             let logits = batchedLogits!
             let vocab = logits.count / tEnc
-            let frameLogits = Array(logits[(t * vocab)..<((t + 1) * vocab)])
+            let frameLogits = Array(logits[(t * vocab) ..< ((t + 1) * vocab)])
             let bestIdx = Self.argmax(frameLogits)
 
             if bestIdx == blankIdx || symbolsAtT >= 10 {
@@ -302,16 +308,16 @@ final class CoreAIStreamingTranscriber {
         // Left-context: previous chunk's last `preEncodeCache` frames at t=0..
         let cacheFrames = melCache.isEmpty ? 0 : preEncodeCache
         if cacheFrames > 0 {
-            for mel in 0..<nMels {
-                for t in 0..<cacheFrames {
+            for mel in 0 ..< nMels {
+                for t in 0 ..< cacheFrames {
                     window[mel * totalMelFrames + t] = melCache[mel * cacheFrames + t]
                 }
             }
         }
         // New frames after the cache position (cap so cache + new == window).
         let copyFrames = min(chunkFrames, totalMelFrames - preEncodeCache)
-        for mel in 0..<nMels {
-            for t in 0..<copyFrames {
+        for mel in 0 ..< nMels {
+            for t in 0 ..< copyFrames {
                 window[mel * totalMelFrames + (preEncodeCache + t)] = m[mel * chunkFrames + t]
             }
         }
@@ -325,8 +331,8 @@ final class CoreAIStreamingTranscriber {
         let cacheFrames = min(preEncodeCache, chunkFrames)
         var cache = [Float](repeating: 0, count: nMels * cacheFrames)
         let startT = chunkFrames - cacheFrames
-        for mel in 0..<nMels {
-            for t in 0..<cacheFrames {
+        for mel in 0 ..< nMels {
+            for t in 0 ..< cacheFrames {
                 cache[mel * cacheFrames + t] = m[mel * chunkFrames + (startT + t)]
             }
         }

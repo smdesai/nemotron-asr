@@ -62,9 +62,6 @@ public struct AppLogger: Sendable {
 
     // MARK: - Console Mirroring
     private func log(_ level: Level, _ message: String) {
-        #if DEBUG
-        logToConsole(level, message)
-        #else
         switch level {
         case .debug:
             osLogger.debug("\(message)")
@@ -74,14 +71,25 @@ public struct AppLogger: Sendable {
             osLogger.notice("\(message)")
         case .warning:
             osLogger.warning("\(message)")
-            logToConsole(level, message)  // Also log warnings to console in release
         case .error:
             osLogger.error("\(message)")
-            logToConsole(level, message)  // Also log errors to console in release
         case .fault:
             osLogger.fault("\(message)")
-            logToConsole(level, message)  // Also log faults to console in release
         }
+
+        // Standard I/O is useful for macOS command-line tools, but watchOS and
+        // iOS may invalidate the debugger's stderr pipe while the app remains
+        // alive. Foundation raises an Objective-C exception for that condition,
+        // which Swift's do/catch cannot intercept. Unified logging is the safe
+        // destination on mobile platforms.
+        #if os(macOS)
+        #if DEBUG
+        logToConsole(level, message)
+        #else
+        if level.rawValue >= Level.warning.rawValue {
+            logToConsole(level, message)
+        }
+        #endif
         #endif
     }
 
@@ -94,13 +102,15 @@ public struct AppLogger: Sendable {
         // the message appears before potential exit() calls
         #if !DEBUG
         if level.rawValue >= Level.warning.rawValue {
-            logToConsoleSynchronously(level: capturedLevel, category: capturedCategory, message: capturedMessage)
+            logToConsoleSynchronously(
+                level: capturedLevel, category: capturedCategory, message: capturedMessage)
             return
         }
         #endif
 
         Task.detached(priority: .utility) { [capturedLevel, capturedCategory, capturedMessage] in
-            await LogConsole.shared.write(level: capturedLevel, category: capturedCategory, message: capturedMessage)
+            await LogConsole.shared.write(
+                level: capturedLevel, category: capturedCategory, message: capturedMessage)
         }
     }
 
@@ -146,7 +156,9 @@ actor LogConsole {
             } catch {
                 // If an I/O error occurs (e.g., the disk is full, the pipe is closed),
                 // the program won't crash. Instead, you handle the error here.
-                print("Fatal: Failed to write to standard error. Underlying error: \(error.localizedDescription)")
+                print(
+                    "Fatal: Failed to write to standard error. Underlying error: \(error.localizedDescription)"
+                )
             }
         }
     }

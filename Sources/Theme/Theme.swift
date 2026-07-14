@@ -6,9 +6,9 @@ import SwiftUI
 enum Theme {
     // MARK: Brand palette
     static let accent = Color("AccentColor")
-    static let aurora1 = Color(hex: 0x6D5CF6)   // violet
-    static let aurora2 = Color(hex: 0x2DD4BF)   // teal
-    static let aurora3 = Color(hex: 0xF472B6)   // pink
+    static let aurora1 = Color(hex: 0x6D5CF6)  // violet
+    static let aurora2 = Color(hex: 0x2DD4BF)  // teal
+    static let aurora3 = Color(hex: 0xF472B6)  // pink
 
     /// Soft animated-feeling background gradient used app-wide.
     static var backgroundGradient: LinearGradient {

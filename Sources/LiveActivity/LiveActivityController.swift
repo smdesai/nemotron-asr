@@ -34,10 +34,13 @@ final class LiveActivityController {
     /// Live Activities disabled. Ends any stale activity left from a prior run.
     func start(language: String?, isListening: Bool = true) {
         let info = ActivityAuthorizationInfo()
-        log.notice("start() called — areActivitiesEnabled=\(info.areActivitiesEnabled, privacy: .public)")
+        log.notice(
+            "start() called — areActivitiesEnabled=\(info.areActivitiesEnabled, privacy: .public)")
         guard info.areActivitiesEnabled else {
             lastStatus = "DISABLED — enable Settings ▸ Nemotron ASR ▸ Live Activities"
-            log.error("NOT started — Live Activities disabled. Enable Settings ▸ Nemotron ASR ▸ Live Activities (and Settings ▸ Face ID & Passcode ▸ Live Activities for the lock screen).")
+            log.error(
+                "NOT started — Live Activities disabled. Enable Settings ▸ Nemotron ASR ▸ Live Activities (and Settings ▸ Face ID & Passcode ▸ Live Activities for the lock screen)."
+            )
             return
         }
 
@@ -60,7 +63,9 @@ final class LiveActivityController {
             lastPush = Date()
             lastPushedTail = ""
             lastStatus = "active ✓ (id \(activity.id.prefix(6)))"
-            log.notice("started id=\(activity.id, privacy: .public) (active count: \(Activity<TranscriptionActivityAttributes>.activities.count, privacy: .public))")
+            log.notice(
+                "started id=\(activity.id, privacy: .public) (active count: \(Activity<TranscriptionActivityAttributes>.activities.count, privacy: .public))"
+            )
         } catch {
             self.activity = nil
             lastStatus = "request FAILED: \(error.localizedDescription)"
@@ -74,9 +79,9 @@ final class LiveActivityController {
     func update(transcript: String, isListening: Bool, language: String?) {
         guard let activity else { return }
         let tail = Self.tail(of: transcript, max: tailLength)
-        if tail == lastPushedTail { return }                       // nothing new
+        if tail == lastPushedTail { return }  // nothing new
         let now = Date()
-        if now.timeIntervalSince(lastPush) < minInterval { return } // rate limit
+        if now.timeIntervalSince(lastPush) < minInterval { return }  // rate limit
 
         lastPush = now
         lastPushedTail = tail

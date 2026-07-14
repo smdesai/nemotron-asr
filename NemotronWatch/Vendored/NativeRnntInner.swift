@@ -94,7 +94,8 @@ public final class NativeRnntInner {
             let n = shape.reduce(1, *)
             var fp32 = [Float](repeating: 0, count: n)
             blobData.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-                let fp16Ptr = raw.baseAddress!.advanced(by: offsetBytes).assumingMemoryBound(to: UInt16.self)
+                let fp16Ptr = raw.baseAddress!.advanced(by: offsetBytes).assumingMemoryBound(
+                    to: UInt16.self)
                 var src = vImage_Buffer(
                     data: UnsafeMutableRawPointer(mutating: fp16Ptr),
                     height: 1,
@@ -158,7 +159,7 @@ public final class NativeRnntInner {
     // MARK: - State management
 
     public func resetState() {
-        for i in 0..<hidden {
+        for i in 0 ..< hidden {
             h0[i] = 0
             c0[i] = 0
             h1[i] = 0
@@ -171,7 +172,7 @@ public final class NativeRnntInner {
     internal func setState(h: MLMultiArray, c: MLMultiArray) {
         let hPtr = h.dataPointer.bindMemory(to: Float.self, capacity: 2 * hidden)
         let cPtr = c.dataPointer.bindMemory(to: Float.self, capacity: 2 * hidden)
-        for i in 0..<hidden {
+        for i in 0 ..< hidden {
             h0[i] = hPtr[i]
             h1[i] = hPtr[hidden + i]
             c0[i] = cPtr[i]
@@ -188,7 +189,7 @@ public final class NativeRnntInner {
             shape: [2, 1, NSNumber(value: hidden)], dataType: .float32)
         let hPtr = hArr.dataPointer.bindMemory(to: Float.self, capacity: 2 * hidden)
         let cPtr = cArr.dataPointer.bindMemory(to: Float.self, capacity: 2 * hidden)
-        for i in 0..<hidden {
+        for i in 0 ..< hidden {
             hPtr[i] = h0[i]
             hPtr[hidden + i] = h1[i]
             cPtr[i] = c0[i]
@@ -212,7 +213,9 @@ public final class NativeRnntInner {
         let embedOffset = tokenIdx * hidden
         var x = [Float](repeating: 0, count: hidden)
         embed.withUnsafeBufferPointer { embPtr in
-            memcpy(&x, embPtr.baseAddress!.advanced(by: embedOffset), hidden * MemoryLayout<Float>.stride)
+            memcpy(
+                &x, embPtr.baseAddress!.advanced(by: embedOffset),
+                hidden * MemoryLayout<Float>.stride)
         }
 
         // 2. LSTM layer 0: (x, h0, c0) -> (h0_new, c0_new)
@@ -336,9 +339,10 @@ public final class NativeRnntInner {
         }
         // Add joint_enc_b broadcast over T_enc rows
         joint_enc_b.withUnsafeBufferPointer { bPtr in
-            for t in 0..<T_enc {
+            for t in 0 ..< T_enc {
                 vDSP_vadd(
-                    outBuf.advanced(by: t * hidden), 1, bPtr.baseAddress!, 1, outBuf.advanced(by: t * hidden), 1,
+                    outBuf.advanced(by: t * hidden), 1, bPtr.baseAddress!, 1,
+                    outBuf.advanced(by: t * hidden), 1,
                     vDSP_Length(hidden))
             }
         }
@@ -360,7 +364,9 @@ public final class NativeRnntInner {
         let embedOffset = tokenIdx * hidden
         var x = [Float](repeating: 0, count: hidden)
         embed.withUnsafeBufferPointer { embPtr in
-            memcpy(&x, embPtr.baseAddress!.advanced(by: embedOffset), hidden * MemoryLayout<Float>.stride)
+            memcpy(
+                &x, embPtr.baseAddress!.advanced(by: embedOffset),
+                hidden * MemoryLayout<Float>.stride)
         }
         lstmCellForward(
             x: x, h: h0, c: c0,
@@ -494,7 +500,8 @@ public final class NativeRnntInner {
             var negOne: Float = -1
             sigScratch.withUnsafeMutableBufferPointer { scratchPtr in
                 vDSP_vsmul(
-                    bPtr.baseAddress!.advanced(by: offset), 1, &negOne, scratchPtr.baseAddress!, 1, vDSP_Length(length))
+                    bPtr.baseAddress!.advanced(by: offset), 1, &negOne, scratchPtr.baseAddress!, 1,
+                    vDSP_Length(length))
             }
         }
         var lenInt32 = Int32(length)
@@ -503,7 +510,8 @@ public final class NativeRnntInner {
         }
         var one: Float = 1
         sigScratch.withUnsafeMutableBufferPointer { scratchPtr in
-            vDSP_vsadd(scratchPtr.baseAddress!, 1, &one, scratchPtr.baseAddress!, 1, vDSP_Length(length))
+            vDSP_vsadd(
+                scratchPtr.baseAddress!, 1, &one, scratchPtr.baseAddress!, 1, vDSP_Length(length))
         }
         sigScratch.withUnsafeBufferPointer { scratchPtr in
             buffer.withUnsafeMutableBufferPointer { bPtr in
@@ -516,7 +524,9 @@ public final class NativeRnntInner {
     private func applyTanh(buffer: inout [Float], offset: Int, length: Int) {
         var lenInt32 = Int32(length)
         buffer.withUnsafeMutableBufferPointer { bPtr in
-            vvtanhf(bPtr.baseAddress!.advanced(by: offset), bPtr.baseAddress!.advanced(by: offset), &lenInt32)
+            vvtanhf(
+                bPtr.baseAddress!.advanced(by: offset), bPtr.baseAddress!.advanced(by: offset),
+                &lenInt32)
         }
     }
 }

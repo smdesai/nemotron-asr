@@ -20,9 +20,10 @@ struct WaveformView: View {
     var body: some View {
         GeometryReader { geo in
             let spacing: CGFloat = 3
-            let barWidth = max(2, (geo.size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
+            let barWidth = max(
+                2, (geo.size.width - spacing * CGFloat(barCount - 1)) / CGFloat(barCount))
             HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<barCount, id: \.self) { i in
+                ForEach(0 ..< barCount, id: \.self) { i in
                     Capsule()
                         .fill(isActive ? Theme.recordingGradient : Theme.brandGradient)
                         .frame(
@@ -52,7 +53,7 @@ struct WaveformView: View {
         // Add a little organic variation so the bars don't all match exactly.
         var next = history
         next.removeFirst()
-        let jitter = CGFloat.random(in: 0.85...1.15)
+        let jitter = CGFloat.random(in: 0.85 ... 1.15)
         next.append(min(1, max(0.04, value * jitter)))
         history = next
     }

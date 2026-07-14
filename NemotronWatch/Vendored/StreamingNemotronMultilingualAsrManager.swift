@@ -322,7 +322,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         let encoderConfiguration = Self.defaultEncoderConfiguration()
 
         // Load config from metadata.json (required — the prompt dictionary lives here)
-        let metadataPath = directory.appendingPathComponent(ModelNames.NemotronMultilingualStreaming.metadata)
+        let metadataPath = directory.appendingPathComponent(
+            ModelNames.NemotronMultilingualStreaming.metadata)
         guard FileManager.default.fileExists(atPath: metadataPath.path) else {
             throw ASRError.processingFailed(
                 "metadata.json not found at \(metadataPath.path). The multilingual variant requires it for prompt_dictionary and lang_tag_token_ids."
@@ -339,7 +340,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         // Only the encoder is ANE-resident. The preprocessor, decoder, joint,
         // and fused decoder/joint all plan to CPU, so load those with CPU-only
         // by default to avoid slow failed ANE compile attempts at startup.
-        let cpuOnlyConfiguration = MLModelConfigurationUtils.defaultConfiguration(computeUnits: .cpuOnly)
+        let cpuOnlyConfiguration = MLModelConfigurationUtils.defaultConfiguration(
+            computeUnits: .cpuOnly)
         let preprocessorURL = try await locateModelBundle(
             in: directory,
             compiled: ModelNames.NemotronMultilingualStreaming.preprocessorFile,
@@ -354,7 +356,9 @@ public actor StreamingNemotronMultilingualAsrManager {
             configuration: Self.computeUnitOverride(
                 name: "FLUIDAUDIO_PREPROCESSOR_CU", base: cpuOnlyConfiguration, logger: logger)
         )
-        logger.info("Loaded preprocessor in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
+        logger.info(
+            "Loaded preprocessor in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s"
+        )
 
         let encoderURL = try await locateModelBundle(
             in: directory,
@@ -370,13 +374,15 @@ public actor StreamingNemotronMultilingualAsrManager {
             configuration: Self.computeUnitOverride(
                 name: "FLUIDAUDIO_ENCODER_CU", base: encoderConfiguration, logger: logger)
         )
-        logger.info("Loaded encoder in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
+        logger.info(
+            "Loaded encoder in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
         // Detect stateful encoder (cache_channel/cache_time as MLState rather
         // than I/O tensors). makeState() returns a fresh zero-initialized state.
         if #available(macOS 15, iOS 18, *) {
             if let enc = self.encoder, !enc.modelDescription.stateDescriptionsByName.isEmpty {
                 self.encoderState = enc.makeState()
-                logger.info("Loaded stateful encoder (MLState cache) — using ANE-resident cache path")
+                logger.info(
+                    "Loaded stateful encoder (MLState cache) — using ANE-resident cache path")
             }
         }
 
@@ -396,7 +402,9 @@ public actor StreamingNemotronMultilingualAsrManager {
                 configuration: Self.computeUnitOverride(
                     name: "FLUIDAUDIO_DECODER_CU", base: cpuOnlyConfiguration, logger: logger)
             )
-            logger.info("Loaded decoder in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
+            logger.info(
+                "Loaded decoder in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s"
+            )
         }
 
         if let jointURL = try await locateOptionalModelBundle(
@@ -413,7 +421,8 @@ public actor StreamingNemotronMultilingualAsrManager {
                 configuration: Self.computeUnitOverride(
                     name: "FLUIDAUDIO_JOINT_CU", base: cpuOnlyConfiguration, logger: logger)
             )
-            logger.info("Loaded joint in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
+            logger.info(
+                "Loaded joint in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s")
         }
 
         // Optional triple-fused decoder+joint+argmax mlpackage (Tier B2).
@@ -492,7 +501,8 @@ public actor StreamingNemotronMultilingualAsrManager {
             self.jointBatched = try await MLModel.load(
                 contentsOf: batchedURL,
                 configuration: Self.computeUnitOverride(
-                    name: "FLUIDAUDIO_JOINT_BATCHED_CU", base: cpuOnlyConfiguration, logger: logger))
+                    name: "FLUIDAUDIO_JOINT_BATCHED_CU", base: cpuOnlyConfiguration, logger: logger)
+            )
             logger.info(
                 "Loaded joint_batched in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s — V1 speculative-blank inner-loop path available"
             )
@@ -505,14 +515,15 @@ public actor StreamingNemotronMultilingualAsrManager {
         if let specBatchedURL = try await locateOptionalModelBundle(
             in: directory, compiled: "joint_noencproj_batched.mlmodelc",
             uncompiled: "joint_noencproj_batched.mlpackage"
-            ) {
+        ) {
             let specConfig = Self.computeUnitOverride(
                 name: "FLUIDAUDIO_JOINT_BATCHED_CU", base: cpuOnlyConfiguration, logger: logger)
             logger.info(
                 "Loading joint_noencproj_batched from \(specBatchedURL.lastPathComponent) with computeUnits=\(Self.computeUnitsDescription(specConfig))"
             )
             loadStarted = Date()
-            self.jointNoEncProjBatched = try await MLModel.load(contentsOf: specBatchedURL, configuration: specConfig)
+            self.jointNoEncProjBatched = try await MLModel.load(
+                contentsOf: specBatchedURL, configuration: specConfig)
             logger.info(
                 "Loaded joint_noencproj_batched in \(String(format: "%.2f", Date().timeIntervalSince(loadStarted)))s — smart speculative-blank path available"
             )
@@ -521,13 +532,16 @@ public actor StreamingNemotronMultilingualAsrManager {
         // Swift hot loop always matches the asset (K=8 historically; K=4
         // build under evaluation at 1120ms).
         if let m = self.jointNoEncProjBatched,
-            let constraint = m.modelDescription.inputDescriptionsByName["encoder_proj"]?.multiArrayConstraint,
+            let constraint = m.modelDescription.inputDescriptionsByName["encoder_proj"]?
+                .multiArrayConstraint,
             constraint.shape.count >= 2
         {
             let kFromModel = constraint.shape[1].intValue
             if kFromModel > 0 {
                 self.jointNoEncProjBatchedK = kFromModel
-                logger.info("Smart-spec K = \(kFromModel) (from joint_noencproj_batched encoder_proj input shape)")
+                logger.info(
+                    "Smart-spec K = \(kFromModel) (from joint_noencproj_batched encoder_proj input shape)"
+                )
             }
         }
 
@@ -535,11 +549,14 @@ public actor StreamingNemotronMultilingualAsrManager {
         // `<build>/native_weights/` (weights.bin + weights_index.json).
         // Takes precedence over all CoreML inner-loop paths.
         let nativeWeightsDir = directory.appendingPathComponent("native_weights")
-        if FileManager.default.fileExists(atPath: nativeWeightsDir.appendingPathComponent("weights.bin").path) {
+        if FileManager.default.fileExists(
+            atPath: nativeWeightsDir.appendingPathComponent("weights.bin").path)
+        {
             self.nativeRnnt = NativeRnntInner(directory: nativeWeightsDir)
             if self.nativeRnnt != nil {
                 logger.info(
-                    "Loaded NativeRnntInner from \(nativeWeightsDir.path) — using native vDSP/cblas inner-loop path")
+                    "Loaded NativeRnntInner from \(nativeWeightsDir.path) — using native vDSP/cblas inner-loop path"
+                )
             } else {
                 logger.warning("Found native_weights/ but failed to initialize NativeRnntInner")
             }
@@ -550,7 +567,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         // 4480ms = +1.7%, both A/B/A/B non-overlapping, WER-neutral).
         // Honor explicit opt-out: env-var = "0"/"false"/"no" disables.
         // Missing assets → transparent fallback to legacy inner loop.
-        let smartSpecEnvVar = ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_SMART_SPECULATIVE"]
+        let smartSpecEnvVar = ProcessInfo.processInfo.environment[
+            "FLUIDAUDIO_ENABLE_SMART_SPECULATIVE"]
         let smartSpecExplicitlyDisabled: Bool = {
             guard let v = smartSpecEnvVar?.lowercased() else { return false }
             return v == "0" || v == "false" || v == "no"
@@ -565,9 +583,12 @@ public actor StreamingNemotronMultilingualAsrManager {
         }
         if smartSpecExplicitlyDisabled {
             logger.info(
-                "Smart-spec: explicitly disabled via FLUIDAUDIO_ENABLE_SMART_SPECULATIVE=\(smartSpecEnvVar ?? "")")
+                "Smart-spec: explicitly disabled via FLUIDAUDIO_ENABLE_SMART_SPECULATIVE=\(smartSpecEnvVar ?? "")"
+            )
         } else if smartSpecMissing.isEmpty {
-            logger.info("Smart-spec: enabled (default-on; assets present; K=\(self.jointNoEncProjBatchedK))")
+            logger.info(
+                "Smart-spec: enabled (default-on; assets present; K=\(self.jointNoEncProjBatchedK))"
+            )
         } else {
             // Default-on intent, but assets missing → legacy fallback.
             // Warn only if the user explicitly opted IN with the env-var
@@ -585,7 +606,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         _ = smartSpecEnabledForLogging  // silence unused warning if introspected later
 
         // Load tokenizer with lang-tag filter set
-        let tokenizerURL = directory.appendingPathComponent(ModelNames.NemotronMultilingualStreaming.tokenizer)
+        let tokenizerURL = directory.appendingPathComponent(
+            ModelNames.NemotronMultilingualStreaming.tokenizer)
         self.tokenizer = try NemotronMultilingualTokenizer(
             vocabPath: tokenizerURL,
             langTagTokenIds: config.langTagTokenIds
@@ -601,13 +623,18 @@ public actor StreamingNemotronMultilingualAsrManager {
         self.decoderPredictionOptions = Self.makePredictionOptions(for: self.decoder)
         self.jointPredictionOptions = Self.makePredictionOptions(for: self.joint)
         self.decoderJointPredictionOptions = Self.makePredictionOptions(for: self.decoderJoint)
-        self.decoderJointArgmaxPredictionOptions = Self.makePredictionOptions(for: self.decoderJointArgmax)
-        self.decoderJointNoEncProjPredictionOptions = Self.makePredictionOptions(for: self.decoderJointNoEncProj)
-        self.jointNoEncProjBatchedPredictionOptions = Self.makePredictionOptions(for: self.jointNoEncProjBatched)
+        self.decoderJointArgmaxPredictionOptions = Self.makePredictionOptions(
+            for: self.decoderJointArgmax)
+        self.decoderJointNoEncProjPredictionOptions = Self.makePredictionOptions(
+            for: self.decoderJointNoEncProj)
+        self.jointNoEncProjBatchedPredictionOptions = Self.makePredictionOptions(
+            for: self.jointNoEncProjBatched)
         // Reusable inner-loop step buffers ([1, encoder_dim, 1] and
         // [1, 1, joint_dim] for the B3 path).
-        self.encoderStepBuf = try? MLMultiArray(shape: [1, NSNumber(value: config.encoderDim), 1], dataType: .float32)
-        self.encoderProjStepBuf = try? MLMultiArray(shape: [1, 1, NSNumber(value: 640)], dataType: .float32)
+        self.encoderStepBuf = try? MLMultiArray(
+            shape: [1, NSNumber(value: config.encoderDim), 1], dataType: .float32)
+        self.encoderProjStepBuf = try? MLMultiArray(
+            shape: [1, 1, NSNumber(value: 640)], dataType: .float32)
 
         // Reusable per-token decoder input buffers. tokenLen is a constant
         // 1 written once at allocation; tokenInput is refilled per iteration
@@ -623,7 +650,9 @@ public actor StreamingNemotronMultilingualAsrManager {
 
         // Reusable preprocessor input buffers — [1, chunkSamples] float32
         // audio + [1] int32 length. Refilled by triple-stage helper.
-        if let audBuf = try? MLMultiArray(shape: [1, NSNumber(value: config.chunkSamples)], dataType: .float32) {
+        if let audBuf = try? MLMultiArray(
+            shape: [1, NSNumber(value: config.chunkSamples)], dataType: .float32)
+        {
             self.audioInputBuf = audBuf
         }
         if let audLen = try? MLMultiArray(shape: [1], dataType: .int32) {
@@ -677,7 +706,9 @@ public actor StreamingNemotronMultilingualAsrManager {
 
         // Encoder: zero mel + zeros caches
         if let mel = try? MLMultiArray(
-            shape: [1, NSNumber(value: config.melFeatures), NSNumber(value: config.totalMelFrames)],
+            shape: [
+                1, NSNumber(value: config.melFeatures), NSNumber(value: config.totalMelFrames),
+            ],
             dataType: .float32),
             let melLen = try? MLMultiArray(shape: [1], dataType: .int32),
             let promptId = try? MLMultiArray(shape: [1], dataType: .int32)
@@ -758,7 +789,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         // Uses encoder_proj [1, K, 640] + decoder [1, 640, 1] → logits.
         if let jb = jointNoEncProjBatched {
             let K = jointNoEncProjBatchedK
-            if let encProj = try? MLMultiArray(shape: [1, NSNumber(value: K), 640], dataType: .float32),
+            if let encProj = try? MLMultiArray(
+                shape: [1, NSNumber(value: K), 640], dataType: .float32),
                 let decStep = try? MLMultiArray(shape: [1, 640, 1], dataType: .float32)
             {
                 encProj.reset(to: 0)
@@ -854,7 +886,9 @@ public actor StreamingNemotronMultilingualAsrManager {
             guard let cons = desc.multiArrayConstraint else { continue }
             let shape = cons.shape.map { $0 }
             if shape.contains(where: { $0.intValue <= 0 }) { continue }
-            guard let arr = try? MLMultiArray(shape: shape, dataType: cons.dataType) else { continue }
+            guard let arr = try? MLMultiArray(shape: shape, dataType: cons.dataType) else {
+                continue
+            }
             backings[name] = arr
         }
         guard !backings.isEmpty else { return nil }
@@ -868,7 +902,8 @@ public actor StreamingNemotronMultilingualAsrManager {
     /// load site still gets the caching behavior (mlpackage → cached
     /// .mlmodelc next to source) instead of compiling to a temp dir per
     /// cold start.
-    private func locateOptionalModelBundle(in directory: URL, compiled: String, uncompiled: String) async throws -> URL?
+    private func locateOptionalModelBundle(in directory: URL, compiled: String, uncompiled: String)
+        async throws -> URL?
     {
         let compiledURL = directory.appendingPathComponent(compiled)
         let uncompiledURL = directory.appendingPathComponent(uncompiled)
@@ -877,10 +912,13 @@ public actor StreamingNemotronMultilingualAsrManager {
         {
             return nil
         }
-        return try await locateModelBundle(in: directory, compiled: compiled, uncompiled: uncompiled)
+        return try await locateModelBundle(
+            in: directory, compiled: compiled, uncompiled: uncompiled)
     }
 
-    private func locateModelBundle(in directory: URL, compiled: String, uncompiled: String) async throws -> URL {
+    private func locateModelBundle(in directory: URL, compiled: String, uncompiled: String)
+        async throws -> URL
+    {
         let compiledURL = directory.appendingPathComponent(compiled)
         if FileManager.default.fileExists(atPath: compiledURL.path) {
             return compiledURL
@@ -991,7 +1029,8 @@ public actor StreamingNemotronMultilingualAsrManager {
         self.lastToken = Int32(langTagId)
         // Mirror what the pipeline would do when it observes a lang-tag token.
         recordDetectedLanguage(language)
-        logger.info("Forced prefix: seeded decoder with lang-tag token id \(langTagId) for \(language)")
+        logger.info(
+            "Forced prefix: seeded decoder with lang-tag token id \(langTagId) for \(language)")
     }
 
     public func cleanup() async {
@@ -1041,9 +1080,11 @@ public actor StreamingNemotronMultilingualAsrManager {
                 config.cacheTimeShape[2],
                 config.cacheTimeShape[3],
             ]
-            for _ in 0..<4 {
-                shardCacheChannels.append(try EncoderCacheManager.createZeroArray(shape: perShardChannelShape))
-                shardCacheTimes.append(try EncoderCacheManager.createZeroArray(shape: perShardTimeShape))
+            for _ in 0 ..< 4 {
+                shardCacheChannels.append(
+                    try EncoderCacheManager.createZeroArray(shape: perShardChannelShape))
+                shardCacheTimes.append(
+                    try EncoderCacheManager.createZeroArray(shape: perShardTimeShape))
                 let len = try EncoderCacheManager.createZeroArray(shape: [1])
                 len[0] = 1
                 shardCacheLens.append(len)
@@ -1132,14 +1173,14 @@ public actor StreamingNemotronMultilingualAsrManager {
         while (self.audioBuffer.count - self.audioBufferOffset) >= chunkSamples {
             let chunkStart = self.audioBufferOffset
             let chunkEnd = chunkStart + chunkSamples
-            let chunk = Array(self.audioBuffer[chunkStart..<chunkEnd])
+            let chunk = Array(self.audioBuffer[chunkStart ..< chunkEnd])
             // Pipelining: peek at the NEXT chunk for preprocessor[t+1] on CPU
             // concurrent with encoder[t] on ANE.
             let nextStart = chunkEnd
             let nextEnd = nextStart + chunkSamples
             let nextChunkSamples: [Float]? =
                 (self.audioBuffer.count - nextStart) >= chunkSamples
-                ? Array(self.audioBuffer[nextStart..<nextEnd])
+                ? Array(self.audioBuffer[nextStart ..< nextEnd])
                 : nil
             try await processChunk(chunk, nextChunkSamples: nextChunkSamples)
             self.audioBufferOffset += chunkSamples
@@ -1164,7 +1205,7 @@ public actor StreamingNemotronMultilingualAsrManager {
             || (decoder != nil && joint != nil)
         guard let tokenizer = tokenizer,
             preprocessor != nil,
-            (encoder != nil || (encoderPreEncode != nil && encoderShards.count == 4)),
+            encoder != nil || (encoderPreEncode != nil && encoderShards.count == 4),
             hasDecodePath
         else {
             throw ASRError.notInitialized
@@ -1179,7 +1220,7 @@ public actor StreamingNemotronMultilingualAsrManager {
 
             let chunkStart = audioBufferOffset
             let chunkEnd = chunkStart + config.chunkSamples
-            let chunk = Array(audioBuffer[chunkStart..<chunkEnd])
+            let chunk = Array(audioBuffer[chunkStart ..< chunkEnd])
             try await processChunk(chunk)
             audioBuffer.removeAll()
             audioBufferOffset = 0
@@ -1202,19 +1243,25 @@ public actor StreamingNemotronMultilingualAsrManager {
             let decMs = Double(decNanos) / 1_000_000.0
             let totalMs = prepMs + encMs + decMs
             let perChunk = totalMs / Double(chunkCount)
-            FileHandle.standardError.write(
-                Data(
-                    "[PROFILE] chunks=\(chunkCount) prep=\(String(format: "%.0f", prepMs))ms enc=\(String(format: "%.0f", encMs))ms dec=\(String(format: "%.0f", decMs))ms total=\(String(format: "%.0f", totalMs))ms per_chunk=\(String(format: "%.2f", perChunk))ms\n"
-                        .utf8))
+            logger.debug(
+                "[PROFILE] chunks=\(chunkCount) prep=\(String(format: "%.0f", prepMs))ms "
+                    + "enc=\(String(format: "%.0f", encMs))ms "
+                    + "dec=\(String(format: "%.0f", decMs))ms "
+                    + "total=\(String(format: "%.0f", totalMs))ms "
+                    + "per_chunk=\(String(format: "%.2f", perChunk))ms"
+            )
             // E4 instrumentation: speculation acceptance rate. High all-blank
             // rate suggests K could grow; low rate suggests K could shrink.
             if specWindowsTotal > 0 {
                 let allBlankPct = Double(specWindowsAllBlank) / Double(specWindowsTotal) * 100.0
                 let hitPct = Double(specWindowsHitNonBlank) / Double(specWindowsTotal) * 100.0
-                FileHandle.standardError.write(
-                    Data(
-                        "[SPEC] windows=\(specWindowsTotal) all_blank=\(specWindowsAllBlank) (\(String(format: "%.1f", allBlankPct))%) hit_non_blank=\(specWindowsHitNonBlank) (\(String(format: "%.1f", hitPct))%)\n"
-                            .utf8))
+                logger.debug(
+                    "[SPEC] windows=\(specWindowsTotal) "
+                        + "all_blank=\(specWindowsAllBlank) "
+                        + "(\(String(format: "%.1f", allBlankPct))%) "
+                        + "hit_non_blank=\(specWindowsHitNonBlank) "
+                        + "(\(String(format: "%.1f", hitPct))%)"
+                )
             }
         }
 
@@ -1226,7 +1273,9 @@ public actor StreamingNemotronMultilingualAsrManager {
     /// lang-tag tokens). `detectedLanguage` is the first lang-tag piece seen
     /// (e.g. "es-419") or nil if none. `processedChunks` is how many chunks
     /// were fed through the encoder for that session.
-    public func lastDecodeStats() -> (tokenCount: Int, detectedLanguage: String?, processedChunks: Int) {
+    public func lastDecodeStats() -> (
+        tokenCount: Int, detectedLanguage: String?, processedChunks: Int
+    ) {
         return (lastFinishTokenCount, lastFinishDetectedLanguage, lastFinishProcessedChunks)
     }
 

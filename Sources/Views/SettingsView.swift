@@ -15,6 +15,7 @@ struct SettingsView: View {
                     VStack(spacing: 18) {
                         backendCard
                         liveActivityCard
+                        sentimentCard
                         languageCard
                         chunkSizeCard
                         fileModeCard
@@ -67,7 +68,9 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cardFill))
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cardFill)
+                    )
                     .textSelection(.enabled)
             }
         }
@@ -92,16 +95,20 @@ struct SettingsView: View {
             cardHeader(
                 "Live Activity",
                 systemImage: "bolt.badge.clock",
-                subtitle: "Shows the running transcript on the lock screen / Dynamic Island while recording in the background."
+                subtitle:
+                    "Shows the running transcript on the lock screen / Dynamic Island while recording in the background."
             )
-            statusRow("System enabled", value: enabled ? "Yes" : "No",
-                      tint: enabled ? Theme.aurora3 : Color(hex: 0xFF5E7E))
+            statusRow(
+                "System enabled", value: enabled ? "Yes" : "No",
+                tint: enabled ? Theme.aurora3 : Color(hex: 0xFF5E7E))
             statusRow("Last result", value: engine.liveActivityStatus, tint: Theme.secondaryText)
             if !enabled {
-                Label("Turn on Settings ▸ Nemotron ASR ▸ Live Activities, and Settings ▸ Face ID & Passcode ▸ Live Activities.",
-                      systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Color(hex: 0xFF5E7E))
+                Label(
+                    "Turn on Settings ▸ Nemotron ASR ▸ Live Activities, and Settings ▸ Face ID & Passcode ▸ Live Activities.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(Color(hex: 0xFF5E7E))
             }
         }
         .glassCard()
@@ -121,11 +128,36 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Sentiment analysis
+
+    private var sentimentCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            cardHeader(
+                "Sentiment Analysis",
+                systemImage: "face.smiling",
+                subtitle: "Color the transcript using on-device sentiment analysis."
+            )
+            Toggle("Highlight sentiment", isOn: sentimentAnalysisBinding)
+                .font(.subheadline.weight(.semibold))
+                .tint(Theme.aurora2)
+        }
+        .glassCard()
+    }
+
+    private var sentimentAnalysisBinding: Binding<Bool> {
+        Binding(
+            get: { settings.sentimentAnalysisEnabled },
+            set: { settings.sentimentAnalysisEnabled = $0 }
+        )
+    }
+
     // MARK: Language
 
     private var languageCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            cardHeader("Language", systemImage: "globe", subtitle: "Optional — leave on Auto-detect to let the model identify the language.")
+            cardHeader(
+                "Language", systemImage: "globe",
+                subtitle: "Optional — leave on Auto-detect to let the model identify the language.")
 
             Menu {
                 Picker("Language", selection: languageBinding) {
@@ -145,8 +177,12 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardFill))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.cardStroke, lineWidth: 1))
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
+                        Theme.cardStroke, lineWidth: 1))
             }
             .tint(.white)
 
@@ -168,7 +204,8 @@ struct SettingsView: View {
         Binding(
             get: { settings.language.id },
             set: { newID in
-                settings.language = ASRLanguageCatalog.all.first { $0.id == newID } ?? ASRLanguageCatalog.auto
+                settings.language =
+                    ASRLanguageCatalog.all.first { $0.id == newID } ?? ASRLanguageCatalog.auto
             }
         )
     }
@@ -177,7 +214,11 @@ struct SettingsView: View {
 
     private var chunkSizeCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            cardHeader("Chunk Size", systemImage: "waveform.path", subtitle: "Smaller chunks lower latency; larger chunks suit longer audio. 2.24 s is recommended.")
+            cardHeader(
+                "Chunk Size", systemImage: "waveform.path",
+                subtitle:
+                    "Smaller chunks lower latency; larger chunks suit longer audio. 2.24 s is recommended."
+            )
 
             VStack(spacing: 10) {
                 ForEach(ChunkSize.allCases) { size in
@@ -185,8 +226,12 @@ struct SettingsView: View {
                         settings.chunkSize = size
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: settings.chunkSize == size ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(settings.chunkSize == size ? Theme.aurora2 : Theme.secondaryText)
+                            Image(
+                                systemName: settings.chunkSize == size
+                                    ? "largecircle.fill.circle" : "circle"
+                            )
+                            .foregroundStyle(
+                                settings.chunkSize == size ? Theme.aurora2 : Theme.secondaryText)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(size.label).fontWeight(.semibold)
@@ -208,11 +253,16 @@ struct SettingsView: View {
                         .padding(.vertical, 12)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(settings.chunkSize == size ? Theme.aurora2.opacity(0.12) : Theme.cardFill)
+                                .fill(
+                                    settings.chunkSize == size
+                                        ? Theme.aurora2.opacity(0.12) : Theme.cardFill)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(settings.chunkSize == size ? Theme.aurora2.opacity(0.5) : Theme.cardStroke, lineWidth: 1)
+                                .stroke(
+                                    settings.chunkSize == size
+                                        ? Theme.aurora2.opacity(0.5) : Theme.cardStroke,
+                                    lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
@@ -227,7 +277,9 @@ struct SettingsView: View {
 
     private var fileModeCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            cardHeader("Audio File Output", systemImage: "doc.text.magnifyingglass", subtitle: "How transcription appears when you import an audio file.")
+            cardHeader(
+                "Audio File Output", systemImage: "doc.text.magnifyingglass",
+                subtitle: "How transcription appears when you import an audio file.")
 
             Picker("File mode", selection: fileModeBinding) {
                 ForEach(FileTranscriptionMode.allCases) { mode in
@@ -251,9 +303,11 @@ struct SettingsView: View {
     private var aboutCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             cardHeader("About", systemImage: "sparkles", subtitle: nil)
-            Text("Powered by NVIDIA Nemotron Speech Streaming Multilingual 0.6B, running fully on-device via CoreML on the Apple Neural Engine.")
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondaryText)
+            Text(
+                "Powered by NVIDIA Nemotron Speech Streaming Multilingual 0.6B, running fully on-device via CoreML on the Apple Neural Engine."
+            )
+            .font(.subheadline)
+            .foregroundStyle(Theme.secondaryText)
         }
         .glassCard()
     }

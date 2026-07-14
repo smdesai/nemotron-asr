@@ -28,8 +28,9 @@ struct TranscriptionLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 10) {
-                        TranscriptText(context.state.transcript, lineLimit: 3,
-                                       placeholder: context.state.isListening ? "Listening…" : "Transcribing…")
+                        TranscriptText(
+                            context.state.transcript, lineLimit: 3,
+                            placeholder: context.state.isListening ? "Listening…" : "Transcribing…")
                         if context.state.isListening {
                             StopButton()
                         }
@@ -69,8 +70,9 @@ private struct LockScreenView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            TranscriptText(state.transcript, lineLimit: 4,
-                           placeholder: state.isListening ? "Listening…" : "Transcribing…")
+            TranscriptText(
+                state.transcript, lineLimit: 4,
+                placeholder: state.isListening ? "Listening…" : "Transcribing…")
             if state.isListening {
                 StopButton()
             }

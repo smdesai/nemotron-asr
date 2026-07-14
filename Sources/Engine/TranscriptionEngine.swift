@@ -1,12 +1,13 @@
 import AVFoundation
 import CoreML
+import Foundation
+import SwiftUI
+
 // The ASR core is vendored into this target (NemotronWatch/Vendored) — no
 // external FluidAudio package. The guard keeps the source usable either way.
 #if canImport(FluidAudio)
 import FluidAudio
 #endif
-import Foundation
-import SwiftUI
 
 /// Drives the Nemotron multilingual streaming ASR for both audio-file and
 /// microphone input, and publishes everything the UI needs to render.
@@ -16,11 +17,11 @@ final class TranscriptionEngine: ObservableObject {
     // MARK: Published UI state
 
     enum Phase: Equatable {
-        case idle               // nothing loaded yet
-        case preparing          // downloading / compiling / loading models
-        case ready              // models loaded, awaiting input
-        case transcribingFile   // processing an audio file
-        case listening          // microphone is live
+        case idle  // nothing loaded yet
+        case preparing  // downloading / compiling / loading models
+        case ready  // models loaded, awaiting input
+        case transcribingFile  // processing an audio file
+        case listening  // microphone is live
         case failed(String)
     }
 
@@ -171,7 +172,8 @@ final class TranscriptionEngine: ObservableObject {
         // Already loaded for this variant — just (re)apply the language hint.
         if loadedVariantKey == key, manager != nil {
             await applyLanguageIfNeeded(code)
-            if case .preparing = phase {} else if phase == .idle {
+            if case .preparing = phase {
+            } else if phase == .idle {
                 phase = .ready
             }
             return
@@ -228,12 +230,13 @@ final class TranscriptionEngine: ObservableObject {
 
     /// Resolve the bundled directory for a given ship + chunk tier.
     private func bundledVariantDirectory(code: String?, chunkMs: Int) throws -> URL {
-        let ship = shipDirectory(for: code)            // "latin" or "multilingual"
+        let ship = shipDirectory(for: code)  // "latin" or "multilingual"
         let tier = "\(chunkMs)ms"
         guard let modelsRoot = Bundle.main.resourceURL?.appendingPathComponent("Models") else {
             throw EngineError.modelNotBundled(ship: ship, tier: tier)
         }
-        let variantDir = modelsRoot
+        let variantDir =
+            modelsRoot
             .appendingPathComponent(ship, isDirectory: true)
             .appendingPathComponent(tier, isDirectory: true)
         let metadata = variantDir.appendingPathComponent("metadata.json")
@@ -254,7 +257,8 @@ final class TranscriptionEngine: ObservableObject {
         guard let modelsRoot = Bundle.main.resourceURL?.appendingPathComponent("Models") else {
             throw EngineError.modelNotBundled(ship: ship, tier: tier)
         }
-        let dir = modelsRoot
+        let dir =
+            modelsRoot
             .appendingPathComponent(ship, isDirectory: true)
             .appendingPathComponent(tier, isDirectory: true)
             .appendingPathComponent("coreai", isDirectory: true)
@@ -275,7 +279,8 @@ final class TranscriptionEngine: ObservableObject {
         // 27.0 beta — so avoid redundant reloads (and re-entrant double-prepares).
         let preparedKey = "\(variantKey(code: code, chunkMs: chunkMs))#\(code ?? "auto")"
         if #available(iOS 27.0, *), coreAIRunner != nil,
-           coreAIPreparedKey == preparedKey, phase == .ready {
+            coreAIPreparedKey == preparedKey, phase == .ready
+        {
             return
         }
 
@@ -347,7 +352,8 @@ final class TranscriptionEngine: ObservableObject {
             coreAIPreparedKey = preparedKey
             phase = .ready
             prepFraction = 1
-            let fp32Note = residency.contains("⚠️")
+            let fp32Note =
+                residency.contains("⚠️")
                 ? " (encoder partly GPU — fp32 ops remain)" : " (encoder ANE-clean)"
             prepMessage = "Core AI ready\(fp32Note)."
         } catch {
@@ -392,7 +398,8 @@ final class TranscriptionEngine: ObservableObject {
             // Stream partial text after each chunk when "Stream live" is selected.
             // The transcriber runs on the MainActor-isolated engine, so the
             // callback can publish to @Published transcript directly.
-            let onPartial: ((String) -> Void)? = streamed
+            let onPartial: ((String) -> Void)? =
+                streamed
                 ? { [weak self] text in self?.transcript = text }
                 : nil
             let text = try await transcriber.transcribe(samples: samples, onPartial: onPartial)
@@ -402,7 +409,8 @@ final class TranscriptionEngine: ObservableObject {
             lastRTFx = elapsed > 0 ? duration / elapsed : nil
             // Surface an explicit note when decode produced no tokens, so the UI
             // isn't silently blank.
-            transcript = text.isEmpty
+            transcript =
+                text.isEmpty
                 ? "[Core AI] no tokens emitted (all-blank decode) in \(String(format: "%.1f", elapsed))s."
                 : text
             fileProgress = 1
@@ -416,8 +424,12 @@ final class TranscriptionEngine: ObservableObject {
     }
 
     private nonisolated func probeShardedEncoderLoadIfPresent(in coremlDir: URL) async throws {
-        let shardURLs = (0..<4).map { coremlDir.appendingPathComponent("encoder_shard_\($0).mlmodelc") }
-        guard shardURLs.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else { return }
+        let shardURLs = (0 ..< 4).map {
+            coremlDir.appendingPathComponent("encoder_shard_\($0).mlmodelc")
+        }
+        guard shardURLs.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+            return
+        }
 
         let cfg = MLModelConfiguration()
         cfg.computeUnits = .cpuAndNeuralEngine
@@ -427,7 +439,8 @@ final class TranscriptionEngine: ObservableObject {
             print("[ShardedEncoderProbe] Loading shard \(idx): \(url.lastPathComponent)")
             _ = try await MLModel.load(contentsOf: url, configuration: cfg)
             let elapsed = Date().timeIntervalSince(started)
-            print("[ShardedEncoderProbe] Loaded shard \(idx) in \(String(format: "%.2f", elapsed))s")
+            print(
+                "[ShardedEncoderProbe] Loaded shard \(idx) in \(String(format: "%.2f", elapsed))s")
         }
         print("[ShardedEncoderProbe] Completed sharded encoder ANE load probe")
     }
@@ -441,7 +454,8 @@ final class TranscriptionEngine: ObservableObject {
             case .modelNotBundled(let ship, let tier):
                 return "The \(ship) model for \(tier) isn't bundled in this build."
             case .coreAINotBundled(let ship, let tier):
-                return "Core AI models for \(ship) \(tier) aren't bundled (expected coreai/encoder_shard_0_int8.aimodel)."
+                return
+                    "Core AI models for \(ship) \(tier) aren't bundled (expected coreai/encoder_shard_0_int8.aimodel)."
             }
         }
     }
@@ -498,7 +512,9 @@ final class TranscriptionEngine: ObservableObject {
                     if !didShowFirstText, !text.isEmpty {
                         didShowFirstText = true
                         let elapsed = Date().timeIntervalSince(firstVisibleStarted)
-                        print("[FileTranscribe] first partial after \(String(format: "%.2f", elapsed))s")
+                        print(
+                            "[FileTranscribe] first partial after \(String(format: "%.2f", elapsed))s"
+                        )
                     }
                     self.transcript = text
                 }
@@ -519,7 +535,9 @@ final class TranscriptionEngine: ObservableObject {
                 if Task.isCancelled { break }
                 if !didLogFirstBlock {
                     didLogFirstBlock = true
-                    print("[FileTranscribe] first decoded block after \(String(format: "%.2f", Date().timeIntervalSince(decodeStarted)))s")
+                    print(
+                        "[FileTranscribe] first decoded block after \(String(format: "%.2f", Date().timeIntervalSince(decodeStarted)))s"
+                    )
                 }
                 _ = try await manager.process(samples: block)
                 totalSamples += block.count
@@ -533,7 +551,9 @@ final class TranscriptionEngine: ObservableObject {
             if !didShowFirstText, !finalText.isEmpty {
                 didShowFirstText = true
                 let elapsed = Date().timeIntervalSince(firstVisibleStarted)
-                print("[FileTranscribe] first text at final after \(String(format: "%.2f", elapsed))s")
+                print(
+                    "[FileTranscribe] first text at final after \(String(format: "%.2f", elapsed))s"
+                )
             }
             fileProgress = 1
             detectedLanguage = await resolveDetectedLanguage()
@@ -585,8 +605,12 @@ final class TranscriptionEngine: ObservableObject {
                     let framesPerRead = AVAudioFrameCount(max(4096, Int(format.sampleRate)))
 
                     while file.framePosition < file.length {
-                        let remaining = AVAudioFrameCount(min(Int64(framesPerRead), file.length - file.framePosition))
-                        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: remaining) else {
+                        let remaining = AVAudioFrameCount(
+                            min(Int64(framesPerRead), file.length - file.framePosition))
+                        guard
+                            let buffer = AVAudioPCMBuffer(
+                                pcmFormat: format, frameCapacity: remaining)
+                        else {
                             throw AudioConverterError.failedToCreateBuffer
                         }
                         try file.read(into: buffer)
@@ -645,7 +669,7 @@ final class TranscriptionEngine: ObservableObject {
         self.micCapture = capture
 
         do {
-            let stream = try capture.start()
+            let stream = try await capture.start()
             phase = .listening
             liveActivity.start(language: liveActivityLanguageLabel)
             liveActivityStatus = liveActivity.lastStatus
@@ -694,7 +718,7 @@ final class TranscriptionEngine: ObservableObject {
         self.micCapture = capture
 
         do {
-            let stream = try capture.start()
+            let stream = try await capture.start()
             phase = .listening
             liveActivity.start(language: liveActivityLanguageLabel)
             liveActivityStatus = liveActivity.lastStatus
@@ -726,7 +750,7 @@ final class TranscriptionEngine: ObservableObject {
 
     func stopListening() async {
         guard phase == .listening else { return }
-        micCapture?.stop()
+        await micCapture?.stop()
         micTask?.cancel()
         micTask = nil
         micCapture = nil
@@ -796,7 +820,8 @@ final class TranscriptionEngine: ObservableObject {
         // (e.g. running on an Intel Mac / unsupported target).
         let raw = error.localizedDescription
         if raw.localizedCaseInsensitiveContains("Apple Silicon") {
-            return "This model needs the Apple Neural Engine. Run on a physical Apple-Silicon device."
+            return
+                "This model needs the Apple Neural Engine. Run on a physical Apple-Silicon device."
         }
         return raw
     }

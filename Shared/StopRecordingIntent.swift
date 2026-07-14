@@ -20,5 +20,6 @@ struct StopRecordingIntent: LiveActivityIntent {
 extension Notification.Name {
     /// Posted by `StopRecordingIntent`; observed by `TranscriptionEngine` to end
     /// the current microphone session.
-    static let stopRecordingRequested = Notification.Name("com.sdesai.NemotronASR.stopRecordingRequested")
+    static let stopRecordingRequested = Notification.Name(
+        "com.sdesai.NemotronASR.stopRecordingRequested")
 }

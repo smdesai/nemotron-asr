@@ -5,6 +5,7 @@ struct TranscriptionView: View {
     @EnvironmentObject var engine: TranscriptionEngine
     @EnvironmentObject var settings: AppSettings
     @Binding var showSettings: Bool
+    @StateObject private var sentiment = SentimentHighlighter()
 
     enum InputMode: String, CaseIterable, Identifiable {
         case microphone, file
@@ -21,7 +22,7 @@ struct TranscriptionView: View {
             header
             statusStrip
             transcriptCard
-                .frame(maxHeight: .infinity)   // grow to fill freed space
+                .frame(maxHeight: .infinity)  // grow to fill freed space
 
             // Microphone mode shows the waveform + record button. File mode
             // needs no extra controls — tapping the Audio File tab opens the
@@ -44,6 +45,9 @@ struct TranscriptionView: View {
             // Kick off model preparation on first appearance so the first
             // transcription is instant.
             await engine.prepareModelIfNeeded()
+        }
+        .task(id: sentimentRequest) {
+            await sentiment.update(sentimentRequest)
         }
     }
 
@@ -91,7 +95,11 @@ struct TranscriptionView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 7)
-                    .foregroundStyle(mode == m ? AnyShapeStyle(Theme.brandGradient) : AnyShapeStyle(Theme.secondaryText))
+                    .foregroundStyle(
+                        mode == m
+                            ? AnyShapeStyle(Theme.brandGradient)
+                            : AnyShapeStyle(Theme.secondaryText)
+                    )
                     .background(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .fill(mode == m ? Theme.cardFill : .clear)
@@ -104,7 +112,10 @@ struct TranscriptionView: View {
         }
         .padding(5)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.cardStroke, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
+                Theme.cardStroke, lineWidth: 1)
+        )
         .padding(.horizontal, 20)
         .padding(.bottom, 6)
     }
@@ -128,9 +139,12 @@ struct TranscriptionView: View {
                 text: settings.languageCode == nil ? "Auto-detect" : settings.language.name,
                 tint: Theme.aurora1
             )
-            InfoChip(systemImage: "waveform.path", text: settings.chunkSize.label, tint: Theme.aurora2)
+            InfoChip(
+                systemImage: "waveform.path", text: settings.chunkSize.label, tint: Theme.aurora2)
             if let rtfx = engine.lastRTFx {
-                InfoChip(systemImage: "speedometer", text: String(format: "%.1fx", rtfx), tint: Theme.aurora3)
+                InfoChip(
+                    systemImage: "speedometer", text: String(format: "%.1fx", rtfx),
+                    tint: Theme.aurora3)
             }
             if let detected = engine.detectedLanguage, settings.languageCode == nil {
                 InfoChip(systemImage: "checkmark.seal.fill", text: detected, tint: Theme.aurora3)
@@ -148,6 +162,15 @@ struct TranscriptionView: View {
                     .font(.headline)
                 if engine.isStreaming {
                     LiveBadge()
+                }
+                if let presentation = sentimentSummaryPresentation {
+                    Label(presentation.label, systemImage: presentation.systemImage)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(presentation.color)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(presentation.color.opacity(0.12), in: Capsule())
+                        .accessibilityLabel("Overall sentiment: \(presentation.label)")
                 }
                 Spacer()
                 if !engine.transcript.isEmpty {
@@ -168,11 +191,11 @@ struct TranscriptionView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(displayTranscript)
+                    Text(sentimentTranscript)
                         .font(.system(.body, design: .rounded))
-                        .foregroundStyle(engine.transcript.isEmpty ? Theme.secondaryText : .white)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
+                        .accessibilityLabel(sentimentAccessibilityLabel)
                         .id("transcriptEnd")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -195,12 +218,71 @@ struct TranscriptionView: View {
         if engine.transcript.isEmpty {
             switch mode {
             case .microphone:
-                return "Tap the mic and start speaking. Your words appear here live as they're transcribed."
+                return
+                    "Tap the mic and start speaking. Your words appear here live as they're transcribed."
             case .file:
-                return "Import an audio file to transcribe it. Choose streamed or final output in Settings."
+                return
+                    "Import an audio file to transcribe it. Choose streamed or final output in Settings."
             }
         }
         return engine.transcript
+    }
+
+    private var sentimentInput: SentimentInput {
+        SentimentInput(
+            text: engine.transcript,
+            languageCode: settings.languageCode,
+            isFinal: !engine.isStreaming
+                && engine.phase != .listening
+                && engine.phase != .transcribingFile
+        )
+    }
+
+    private var sentimentRequest: SentimentInput? {
+        settings.sentimentAnalysisEnabled ? sentimentInput : nil
+    }
+
+    private var sentimentTranscript: AttributedString {
+        guard !engine.transcript.isEmpty else {
+            var placeholder = AttributedString(displayTranscript)
+            placeholder.foregroundColor = Theme.secondaryText
+            return placeholder
+        }
+
+        guard settings.sentimentAnalysisEnabled else {
+            return AttributedString(engine.transcript)
+        }
+
+        return sentiment.document.attributedString(
+            fallback: engine.transcript,
+            palette: sentimentPalette
+        )
+    }
+
+    private var sentimentPalette: SentimentPalette {
+        SentimentPalette(
+            negative: Color(red: 1, green: 0.48, blue: 0.36),
+            neutral: .white,
+            positive: Theme.aurora2,
+            mixed: Theme.aurora1,
+            unavailable: Theme.secondaryText,
+            provisional: .white
+        )
+    }
+
+    private var sentimentSummaryPresentation: SentimentPresentation? {
+        guard settings.sentimentAnalysisEnabled,
+            !engine.transcript.isEmpty,
+            sentiment.analyzedInput == sentimentInput
+        else { return nil }
+        return sentiment.document.summary.presentation(palette: sentimentPalette)
+    }
+
+    private var sentimentAccessibilityLabel: String {
+        guard settings.sentimentAnalysisEnabled, !engine.transcript.isEmpty else {
+            return displayTranscript
+        }
+        return sentiment.document.accessibilityLabel(fallback: engine.transcript)
     }
 
     // MARK: Microphone controls
@@ -264,7 +346,9 @@ private struct LiveBadge: View {
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Capsule().fill(Color(hex: 0xFF5E7E).opacity(0.15)))
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
         }
     }
 }
@@ -289,9 +373,15 @@ private struct RecordButton: View {
                     .opacity(isRecording ? (ring ? 0 : 0.7) : 0)
 
                 Circle()
-                    .fill(isRecording ? AnyShapeStyle(Theme.recordingGradient) : AnyShapeStyle(Theme.brandGradient))
+                    .fill(
+                        isRecording
+                            ? AnyShapeStyle(Theme.recordingGradient)
+                            : AnyShapeStyle(Theme.brandGradient)
+                    )
                     .frame(width: 92, height: 92)
-                    .shadow(color: (isRecording ? Color(hex: 0xFF5E7E) : Theme.aurora1).opacity(0.5), radius: 18, y: 6)
+                    .shadow(
+                        color: (isRecording ? Color(hex: 0xFF5E7E) : Theme.aurora1).opacity(0.5),
+                        radius: 18, y: 6)
 
                 Image(systemName: isRecording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 34, weight: .bold))
@@ -304,7 +394,9 @@ private struct RecordButton: View {
         .opacity(isEnabled ? 1 : 0.5)
         .onChange(of: isRecording) { _, rec in
             if rec {
-                withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) { ring = true }
+                withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false)) {
+                    ring = true
+                }
             } else {
                 ring = false
             }

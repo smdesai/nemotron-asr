@@ -1,8 +1,9 @@
 import Foundation
+import OSLog
+
 #if canImport(MachTaskSelfWrapper)
 import MachTaskSelfWrapper
 #endif
-import OSLog
 
 #if canImport(Darwin)
 import Darwin

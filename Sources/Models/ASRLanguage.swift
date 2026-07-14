@@ -72,7 +72,8 @@ enum ASRLanguageCatalog {
             return match.name
         }
         // Fall back to the system's localized language name for the base code.
-        let base = code.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? code
+        let base =
+            code.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? code
         if let localized = Locale.current.localizedString(forLanguageCode: base) {
             return localized.capitalized
         }

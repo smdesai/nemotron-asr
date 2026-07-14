@@ -44,7 +44,7 @@ final class WatchMicrophoneCapture: @unchecked Sendable {
 
     /// Configure the audio session and start the engine. Returns a stream of
     /// 16 kHz mono sample blocks. Throws if the engine fails to start.
-    func start() throws -> AsyncStream<[Float]> {
+    func start() async throws -> AsyncStream<[Float]> {
         #if os(iOS) || os(watchOS)
         let session = AVAudioSession.sharedInstance()
         do {
@@ -55,7 +55,21 @@ final class WatchMicrophoneCapture: @unchecked Sendable {
             } catch {
                 try session.setCategory(.record, mode: .default)
             }
-            try session.setActive(true, options: [])
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                session.activate(options: []) { activated, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if activated {
+                        continuation.resume()
+                    } else {
+                        continuation.resume(
+                            throwing: CaptureError.engineFailed(
+                                "The audio session could not be activated."
+                            ))
+                    }
+                }
+            }
         } catch {
             throw CaptureError.engineFailed(error.localizedDescription)
         }
@@ -91,14 +105,20 @@ final class WatchMicrophoneCapture: @unchecked Sendable {
         return stream
     }
 
-    func stop() {
+    func stop() async {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         continuation?.finish()
         continuation = nil
         #if os(iOS) || os(watchOS)
-        try? AVAudioSession.sharedInstance().setActive(
-            false, options: [.notifyOthersOnDeactivation])
+        await withCheckedContinuation {
+            (continuation: CheckedContinuation<Void, Never>) in
+            AVAudioSession.sharedInstance().deactivate(
+                options: [.notifyOthersOnDeactivation]
+            ) { _, _ in
+                continuation.resume()
+            }
+        }
         #endif
     }
 }

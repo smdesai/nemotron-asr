@@ -7,6 +7,8 @@ import SwiftUI
 struct WatchContentView: View {
 
     @StateObject private var manager = WatchASRManager()
+    @StateObject private var sentiment = SentimentHighlighter()
+    @AppStorage("sentimentAnalysisEnabled") private var sentimentAnalysisEnabled = true
 
     /// Accent gradient shared with the iOS app's look (indigo → mint).
     private static let accent = LinearGradient(
@@ -18,6 +20,9 @@ struct WatchContentView: View {
             content
         }
         .task { await manager.load() }
+        .task(id: sentimentRequest) {
+            await sentiment.update(sentimentRequest)
+        }
     }
 
     // MARK: - Phases
@@ -70,9 +75,15 @@ struct WatchContentView: View {
         VStack(spacing: 5) {
             HStack {
                 backendBadge
+                sentimentToggle
                 Spacer()
-                if manager.isListening {
+                if manager.isTransitioning {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if manager.isListening {
                     listeningIndicator
+                } else if let presentation = sentimentSummaryPresentation {
+                    sentimentBadge(presentation)
                 }
             }
 
@@ -115,19 +126,37 @@ struct WatchContentView: View {
         }
     }
 
+    private var sentimentToggle: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "face.smiling")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(sentimentAnalysisEnabled ? .mint : .secondary)
+            Toggle("Sentiment analysis", isOn: $sentimentAnalysisEnabled)
+                .labelsHidden()
+                .controlSize(.mini)
+                .tint(.mint)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sentiment analysis")
+        .accessibilityValue(sentimentAnalysisEnabled ? "On" : "Off")
+    }
+
     private var transcriptCard: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 Group {
                     if manager.transcript.isEmpty {
-                        Text(manager.isListening
-                            ? "Listening…"
-                            : "Tap the mic and start speaking.")
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
+                        Text(
+                            manager.isListening
+                                ? "Listening…"
+                                : "Tap the mic and start speaking."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
                     } else {
-                        Text(manager.transcript)
+                        Text(sentimentTranscript)
                             .font(.footnote)
+                            .accessibilityLabel(sentimentAccessibilityLabel)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,7 +176,70 @@ struct WatchContentView: View {
     // MARK: - Controls
 
     private var hasShareableTranscript: Bool {
-        !manager.transcript.isEmpty && !manager.isListening
+        !manager.transcript.isEmpty && !manager.isListening && !manager.isTransitioning
+    }
+
+    private var sentimentInput: SentimentInput {
+        SentimentInput(
+            text: manager.transcript,
+            // Keep Watch sentiment deterministic while language-specific
+            // Natural Language availability is being validated on-device.
+            languageCode: "en",
+            isFinal: !manager.isListening && !manager.isTransitioning
+        )
+    }
+
+    private var sentimentRequest: SentimentInput? {
+        sentimentAnalysisEnabled ? sentimentInput : nil
+    }
+
+    private var sentimentTranscript: AttributedString {
+        guard sentimentAnalysisEnabled else {
+            return AttributedString(manager.transcript)
+        }
+        return sentiment.document.attributedString(
+            fallback: manager.transcript,
+            palette: sentimentPalette
+        )
+    }
+
+    private var sentimentPalette: SentimentPalette {
+        SentimentPalette(
+            negative: Color(red: 1, green: 0.48, blue: 0.36),
+            neutral: .white,
+            positive: .mint,
+            mixed: .indigo,
+            unavailable: .secondary,
+            provisional: .white
+        )
+    }
+
+    private var sentimentSummaryPresentation: SentimentPresentation? {
+        guard sentimentAnalysisEnabled,
+            !manager.transcript.isEmpty,
+            sentiment.analyzedInput == sentimentInput
+        else { return nil }
+        return sentiment.document.summary.presentation(palette: sentimentPalette)
+            ?? SentimentPresentation(
+                label: "Unavailable",
+                systemImage: "questionmark",
+                color: sentimentPalette.unavailable
+            )
+    }
+
+    private var sentimentAccessibilityLabel: String {
+        guard sentimentAnalysisEnabled else { return manager.transcript }
+        return sentiment.document.accessibilityLabel(fallback: manager.transcript)
+    }
+
+    private func sentimentBadge(_ presentation: SentimentPresentation) -> some View {
+        Label(presentation.label, systemImage: presentation.systemImage)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(presentation.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(presentation.color.opacity(0.14), in: Capsule())
+            .accessibilityLabel("Overall sentiment: \(presentation.label)")
     }
 
     private var controls: some View {
@@ -191,15 +283,21 @@ struct WatchContentView: View {
                         .animation(.easeOut(duration: 0.12), value: manager.micLevel)
                 }
                 Circle()
-                    .fill(manager.isListening ? AnyShapeStyle(Color.red) : AnyShapeStyle(Self.accent))
-                Image(systemName: manager.isListening ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
+                    .fill(
+                        manager.isListening ? AnyShapeStyle(Color.red) : AnyShapeStyle(Self.accent))
+                if manager.isTransitioning {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: manager.isListening ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
             .frame(width: 46, height: 46)
         }
         .buttonStyle(.plain)
-        .disabled(!manager.isReady && !manager.isListening)
+        .disabled(manager.isTransitioning || (!manager.isReady && !manager.isListening))
     }
 
     private var backdrop: some View {

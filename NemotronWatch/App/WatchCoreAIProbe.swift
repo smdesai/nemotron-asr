@@ -18,10 +18,12 @@ enum WatchCoreAIProbe {
     static let appGroupCacheId = "group.com.sdesai.NemotronASR"
 
     static func run() async {
-        print("[WatchCoreAIProbe] device arch: \(AIModel.deviceArchitectureName), "
-            + "available compute: \(ComputeUnitKind.availableKinds)")
+        print(
+            "[WatchCoreAIProbe] device arch: \(AIModel.deviceArchitectureName), "
+                + "available compute: \(ComputeUnitKind.availableKinds)")
 
-        guard let dir = Bundle.main.url(forResource: "NemotronWatchCoreAIProbe", withExtension: nil) else {
+        guard let dir = Bundle.main.url(forResource: "NemotronWatchCoreAIProbe", withExtension: nil)
+        else {
             print("[WatchCoreAIProbe] ❌ probe model folder not bundled")
             return
         }

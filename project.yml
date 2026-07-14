@@ -24,6 +24,7 @@ targets:
     deploymentTarget: "27.0"
     sources:
       - path: Sources
+      - path: Sentiment
       # Vendored FluidAudio ASR core (the same standalone subset the watch
       # compiles). Built directly into the app so there is NO dependency on the
       # external FluidAudio Swift package — everything is self-contained here.
@@ -126,9 +127,16 @@ targets:
       - path: NemotronWatch
         excludes:
           - Info.plist
+      - path: Sentiment
       # Folder reference: pre-compiled .mlmodelc bundles are copied verbatim
       # into a NemotronWatchModels/ subdirectory of the app bundle.
       - path: NemotronWatchModels
+        type: folder
+        buildPhase: resources
+      # Pre-compiled multilingual sentiment model and its WordPiece vocabulary
+      # (see scripts/stage-watch-sentiment.sh). Kept watch-only so the 258 MB
+      # model is not duplicated into the iOS app.
+      - path: NemotronWatchSentiment
         type: folder
         buildPhase: resources
     info:
@@ -163,3 +171,30 @@ targets:
           - $(SRCROOT)/SDKShims/watchos
     scheme:
       testTargets: []
+      run:
+        config: Debug
+
+  # Hostless unit tests for the platform-neutral sentiment module. Keeping this
+  # target independent of the app avoids loading the ASR runtime during tests.
+  NemotronSentimentTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sentiment
+      - path: Tests/Sentiment
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sdesai.NemotronASR.SentimentTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+
+schemes:
+  NemotronSentimentTests:
+    build:
+      targets:
+        NemotronSentimentTests: [test]
+    test:
+      targets:
+        - NemotronSentimentTests

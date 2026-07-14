@@ -98,7 +98,8 @@ final public class AudioConverter: Sendable {
         while audioFile.framePosition < audioFile.length {
             let remaining = Int(audioFile.length - audioFile.framePosition)
             let framesToRead = AVAudioFrameCount(min(chunkSize, remaining))
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead) else {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: framesToRead)
+            else {
                 throw AudioConverterError.failedToCreateBuffer
             }
             try audioFile.read(into: buffer)
@@ -139,7 +140,8 @@ final public class AudioConverter: Sendable {
         }
 
         guard
-            let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(samples.count))
+            let inputBuffer = AVAudioPCMBuffer(
+                pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(samples.count))
         else {
             throw AudioConverterError.failedToCreateBuffer
         }
@@ -175,7 +177,9 @@ final public class AudioConverter: Sendable {
         guard frameCount > 0 else { return [] }
 
         // If already mono Float32 non-interleaved, fast path
-        if format.channelCount == 1 && format.commonFormat == .pcmFormatFloat32 && !format.isInterleaved {
+        if format.channelCount == 1 && format.commonFormat == .pcmFormatFloat32
+            && !format.isInterleaved
+        {
             guard let channelData = buffer.floatChannelData else { return [] }
             return Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
         }
@@ -198,7 +202,10 @@ final public class AudioConverter: Sendable {
             throw AudioConverterError.failedToCreateConverter
         }
 
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: buffer.frameCapacity) else {
+        guard
+            let outputBuffer = AVAudioPCMBuffer(
+                pcmFormat: monoFormat, frameCapacity: buffer.frameCapacity)
+        else {
             throw AudioConverterError.failedToCreateBuffer
         }
 
@@ -225,7 +232,8 @@ final public class AudioConverter: Sendable {
         }
 
         guard let channelData = outputBuffer.floatChannelData else { return [] }
-        return Array(UnsafeBufferPointer(start: channelData[0], count: Int(outputBuffer.frameLength)))
+        return Array(
+            UnsafeBufferPointer(start: channelData[0], count: Int(outputBuffer.frameLength)))
     }
 
     /// Convert a CMSampleBuffer to the target format
@@ -243,9 +251,12 @@ final public class AudioConverter: Sendable {
     /// - Returns: An `AVAudioPCMBuffer`
     /// - Throws: `AudioConverterError.sampleBufferFormatMissing` (most likely caused by the sample buffer belonging
     ///  to a video frame)
-    public func extractAVAudioPCMBuffer(from sampleBuffer: CMSampleBuffer) throws -> AVAudioPCMBuffer {
+    public func extractAVAudioPCMBuffer(from sampleBuffer: CMSampleBuffer) throws
+        -> AVAudioPCMBuffer
+    {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-            let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+            let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(
+                formatDescription)
         else {
             throw AudioConverterError.sampleBufferFormatMissing
         }
@@ -256,7 +267,8 @@ final public class AudioConverter: Sendable {
 
         let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
 
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount)
+        else {
             throw AudioConverterError.failedToCreateBuffer
         }
         buffer.frameLength = frameCount
@@ -280,7 +292,9 @@ final public class AudioConverter: Sendable {
     }
 
     /// Convert a buffer to the target format.
-    private func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> [Float] {
+    private func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws
+        -> [Float]
+    {
         let inputFormat = buffer.format
 
         // For >2 channels, use manual linear resampling since AVAudioConverter has limitations
@@ -295,7 +309,8 @@ final public class AudioConverter: Sendable {
 
         // Estimate first pass capacity and allocate
         let sampleRateRatio = format.sampleRate / inputFormat.sampleRate
-        let estimatedOutputFrames = AVAudioFrameCount((Double(buffer.frameLength) * sampleRateRatio).rounded(.up))
+        let estimatedOutputFrames = AVAudioFrameCount(
+            (Double(buffer.frameLength) * sampleRateRatio).rounded(.up))
 
         func makeOutputBuffer(_ capacity: AVAudioFrameCount) throws -> AVAudioPCMBuffer {
             guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
@@ -332,7 +347,9 @@ final public class AudioConverter: Sendable {
         let firstOut = try makeOutputBuffer(estimatedOutputFrames)
         let firstStatus = converter.convert(to: firstOut, error: &error, withInputFrom: inputBlock)
         guard firstStatus != .error else { throw AudioConverterError.conversionFailed(error) }
-        if firstOut.frameLength > 0 { aggregated.append(contentsOf: extractFloatArray(from: firstOut)) }
+        if firstOut.frameLength > 0 {
+            aggregated.append(contentsOf: extractFloatArray(from: firstOut))
+        }
 
         // Drain remaining frames until EOS
         while true {
@@ -369,7 +386,9 @@ final public class AudioConverter: Sendable {
     /// Resample high channel count audio (>2 channels) using linear interpolation
     /// AVAudioConverter has limitations with >2 channels, so we handle it via a linear resample. Accuracy may not be as good as AVAudioConverter.
     /// But this is needed for applications like Safari on speaker mode, or for particular hardware devices.
-    private func linearResample(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> [Float] {
+    private func linearResample(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws
+        -> [Float]
+    {
         let inputFormat = buffer.format
         guard let channelData = buffer.floatChannelData else {
             throw AudioConverterError.failedToCreateBuffer
@@ -382,9 +401,9 @@ final public class AudioConverter: Sendable {
         var monoSamples = [Float](repeating: 0, count: inputFrameCount)
         let channelWeight = 1.0 / Float(channelCount)
 
-        for frame in 0..<inputFrameCount {
+        for frame in 0 ..< inputFrameCount {
             var sum: Float = 0
-            for channel in 0..<channelCount {
+            for channel in 0 ..< channelCount {
                 sum += channelData[channel][frame]
             }
             monoSamples[frame] = sum * channelWeight
@@ -403,14 +422,15 @@ final public class AudioConverter: Sendable {
         let outputFrameCount = Int(Double(inputFrameCount) / resampleRatio)
         var outputSamples = [Float](repeating: 0, count: outputFrameCount)
 
-        for i in 0..<outputFrameCount {
+        for i in 0 ..< outputFrameCount {
             let sourceIndex = Double(i) * resampleRatio
             let index = Int(sourceIndex)
             let fraction = Float(sourceIndex - Double(index))
 
             if index < inputFrameCount - 1 {
                 // Linear interpolation between samples
-                outputSamples[i] = monoSamples[index] * (1.0 - fraction) + monoSamples[index + 1] * fraction
+                outputSamples[i] =
+                    monoSamples[index] * (1.0 - fraction) + monoSamples[index + 1] * fraction
             } else if index < inputFrameCount {
                 outputSamples[i] = monoSamples[index]
             }

@@ -118,11 +118,13 @@ extension StreamingNemotronMultilingualAsrManager {
         }
 
         let mlConfiguration = configuration ?? MLModelConfigurationUtils.defaultConfiguration()
-        let cpuOnlyConfiguration = MLModelConfigurationUtils.defaultConfiguration(computeUnits: .cpuOnly)
+        let cpuOnlyConfiguration = MLModelConfigurationUtils.defaultConfiguration(
+            computeUnits: .cpuOnly)
         let encoderConfiguration = Self.defaultEncoderConfiguration()
         logger.info("Preloading shared Nemotron multilingual models from \(directory.path)...")
 
-        let metadataPath = commonDir.appendingPathComponent(ModelNames.NemotronMultilingualStreaming.metadata)
+        let metadataPath = commonDir.appendingPathComponent(
+            ModelNames.NemotronMultilingualStreaming.metadata)
         guard FileManager.default.fileExists(atPath: metadataPath.path) else {
             throw ASRError.processingFailed(
                 "metadata.json not found at \(metadataPath.path)."
@@ -150,7 +152,8 @@ extension StreamingNemotronMultilingualAsrManager {
             directory: directory,
             compiledName: ModelNames.NemotronMultilingualStreaming.encoderFile,
             packageName: ModelNames.NemotronMultilingualStreaming.encoderPackage,
-            configuration: Self.computeUnitOverride(name: "FLUIDAUDIO_ENCODER_CU", base: encoderConfiguration, logger: logger),
+            configuration: Self.computeUnitOverride(
+                name: "FLUIDAUDIO_ENCODER_CU", base: encoderConfiguration, logger: logger),
             logName: "encoder",
             logger: logger
         )
@@ -158,7 +161,8 @@ extension StreamingNemotronMultilingualAsrManager {
         if #available(macOS 15, iOS 18, *) {
             encoderIsStateful = !(encoder?.modelDescription.stateDescriptionsByName.isEmpty ?? true)
             if encoderIsStateful {
-                logger.info("Encoder has MLState — per-stream state will be allocated on consumer init")
+                logger.info(
+                    "Encoder has MLState — per-stream state will be allocated on consumer init")
             }
         } else {
             encoderIsStateful = false
@@ -184,14 +188,15 @@ extension StreamingNemotronMultilingualAsrManager {
         #else
         let shardBaseConfiguration = mlConfiguration
         #endif
-        for idx in 0..<4 {
+        for idx in 0 ..< 4 {
             guard
                 let shard = try await Self.loadOptionalShared(
                     directory: directory,
                     compiledName: "encoder_shard_\(idx).mlmodelc",
                     packageName: "encoder_shard_\(idx).mlpackage",
                     configuration: Self.computeUnitOverride(
-                        name: "FLUIDAUDIO_ENCODER_SHARDS_CU", base: shardBaseConfiguration, logger: logger),
+                        name: "FLUIDAUDIO_ENCODER_SHARDS_CU", base: shardBaseConfiguration,
+                        logger: logger),
                     logName: "encoder_shard_\(idx)",
                     logger: logger
                 )
@@ -234,7 +239,8 @@ extension StreamingNemotronMultilingualAsrManager {
             directory: directory,
             compiledName: ModelNames.NemotronMultilingualStreaming.jointFile,
             packageName: ModelNames.NemotronMultilingualStreaming.jointPackage,
-            configuration: Self.computeUnitOverride(name: "FLUIDAUDIO_JOINT_CU", base: cpuOnlyConfiguration, logger: logger),
+            configuration: Self.computeUnitOverride(
+                name: "FLUIDAUDIO_JOINT_CU", base: cpuOnlyConfiguration, logger: logger),
             logName: "joint",
             logger: logger
         )
@@ -316,7 +322,8 @@ extension StreamingNemotronMultilingualAsrManager {
         }
 
         // Tokenizer (shared file — from the common dir)
-        let tokenizerURL = commonDir.appendingPathComponent(ModelNames.NemotronMultilingualStreaming.tokenizer)
+        let tokenizerURL = commonDir.appendingPathComponent(
+            ModelNames.NemotronMultilingualStreaming.tokenizer)
         let tokenizer = try NemotronMultilingualTokenizer(
             vocabPath: tokenizerURL,
             langTagTokenIds: config.langTagTokenIds
@@ -378,7 +385,8 @@ extension StreamingNemotronMultilingualAsrManager {
         self.tokenizer = shared.tokenizer
 
         if let m = self.jointNoEncProjBatched,
-            let constraint = m.modelDescription.inputDescriptionsByName["encoder_proj"]?.multiArrayConstraint,
+            let constraint = m.modelDescription.inputDescriptionsByName["encoder_proj"]?
+                .multiArrayConstraint,
             constraint.shape.count >= 2
         {
             let kFromModel = constraint.shape[1].intValue
@@ -409,13 +417,18 @@ extension StreamingNemotronMultilingualAsrManager {
         self.decoderPredictionOptions = Self.makePredictionOptions(for: self.decoder)
         self.jointPredictionOptions = Self.makePredictionOptions(for: self.joint)
         self.decoderJointPredictionOptions = Self.makePredictionOptions(for: self.decoderJoint)
-        self.decoderJointArgmaxPredictionOptions = Self.makePredictionOptions(for: self.decoderJointArgmax)
-        self.decoderJointNoEncProjPredictionOptions = Self.makePredictionOptions(for: self.decoderJointNoEncProj)
-        self.jointNoEncProjBatchedPredictionOptions = Self.makePredictionOptions(for: self.jointNoEncProjBatched)
+        self.decoderJointArgmaxPredictionOptions = Self.makePredictionOptions(
+            for: self.decoderJointArgmax)
+        self.decoderJointNoEncProjPredictionOptions = Self.makePredictionOptions(
+            for: self.decoderJointNoEncProj)
+        self.jointNoEncProjBatchedPredictionOptions = Self.makePredictionOptions(
+            for: self.jointNoEncProjBatched)
 
         // Per-stream inner-loop step buffers
-        self.encoderStepBuf = try? MLMultiArray(shape: [1, NSNumber(value: config.encoderDim), 1], dataType: .float32)
-        self.encoderProjStepBuf = try? MLMultiArray(shape: [1, 1, NSNumber(value: 640)], dataType: .float32)
+        self.encoderStepBuf = try? MLMultiArray(
+            shape: [1, NSNumber(value: config.encoderDim), 1], dataType: .float32)
+        self.encoderProjStepBuf = try? MLMultiArray(
+            shape: [1, 1, NSNumber(value: 640)], dataType: .float32)
 
         // Per-stream token input buffers
         if let tokInput = try? MLMultiArray(shape: [1, 1], dataType: .int32) {
@@ -470,7 +483,8 @@ extension StreamingNemotronMultilingualAsrManager {
             logger.info(
                 "Loading shared \(logName) from \(compiledName) with computeUnits=\(Self.computeUnitsDescription(configuration))"
             )
-            let model = try await MLModel.load(contentsOf: compiledURL, configuration: configuration)
+            let model = try await MLModel.load(
+                contentsOf: compiledURL, configuration: configuration)
             logger.info(
                 "Loaded shared \(compiledName) in \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
             )
@@ -497,7 +511,8 @@ extension StreamingNemotronMultilingualAsrManager {
         )
         let tempCompiledURL = try await MLModel.compileModel(at: packageURL)
         logger.info("Loading compiled shared \(logName) from temporary mlmodelc")
-        let model = try await MLModel.load(contentsOf: tempCompiledURL, configuration: configuration)
+        let model = try await MLModel.load(
+            contentsOf: tempCompiledURL, configuration: configuration)
         logger.info(
             "Compiled + loaded shared \(packageName) in \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
         )
@@ -536,7 +551,8 @@ extension StreamingNemotronMultilingualAsrManager {
             )
             let tempCompiledURL = try await MLModel.compileModel(at: packageURL)
             logger.info("Loading compiled optional shared \(logName) from temporary mlmodelc")
-            let m = try await MLModel.load(contentsOf: tempCompiledURL, configuration: configuration)
+            let m = try await MLModel.load(
+                contentsOf: tempCompiledURL, configuration: configuration)
             logger.info(
                 "Compiled + loaded shared \(packageName) in \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
             )

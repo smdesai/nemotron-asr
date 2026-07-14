@@ -79,8 +79,10 @@ final class CoreAIEncoderRunner {
 
         var errorDescription: String? {
             switch self {
-            case .shardMissing(let i, let u): return "Core AI encoder shard \(i) missing: \(u.lastPathComponent)"
-            case .functionMissing(let u): return "Core AI shard \(u.lastPathComponent) exposes no function"
+            case .shardMissing(let i, let u):
+                return "Core AI encoder shard \(i) missing: \(u.lastPathComponent)"
+            case .functionMissing(let u):
+                return "Core AI shard \(u.lastPathComponent) exposes no function"
             case .outputMissing(let n): return "Core AI shard produced no '\(n)' output"
             case .unsupportedScalarType: return "Unsupported NDArray scalar type for shard I/O"
             }
@@ -109,7 +111,7 @@ final class CoreAIEncoderRunner {
     private var shardCacheLen = [Int32](repeating: 0, count: 4)
 
     init(coreaiDirectory dir: URL) {
-        self.shardURLs = (0..<4).map { CoreAIAssets.encoderShardURL($0, in: dir) }
+        self.shardURLs = (0 ..< 4).map { CoreAIAssets.encoderShardURL($0, in: dir) }
     }
 
     /// Release Core AI resources in a crash-safe order: the cached
@@ -141,7 +143,7 @@ final class CoreAIEncoderRunner {
     /// `get_initial_cache_state`: zeros + cache_len 0). Call at the start of
     /// each utterance, before the first chunk.
     func resetStreamingCaches() {
-        for idx in 0..<4 {
+        for idx in 0 ..< 4 {
             if var buf = shardCacheChannelND[idx] {
                 Self.zeroFill(&buf)
                 shardCacheChannelND[idx] = buf
@@ -189,7 +191,8 @@ final class CoreAIEncoderRunner {
             print("[CoreAI] loading \(url.lastPathComponent) .cpuOnly (forced)")
             return try await loadCPUOnly(at: url)
         }
-        let gpuFree = env["COREAI_GPU_FREE"]?.uppercased() != "NO"
+        let gpuFree =
+            env["COREAI_GPU_FREE"]?.uppercased() != "NO"
             && (UserDefaults.standard.object(forKey: "coreai.gpuFree") == nil
                 || UserDefaults.standard.bool(forKey: "coreai.gpuFree"))
         if gpuFree {
@@ -200,12 +203,15 @@ final class CoreAIEncoderRunner {
                 print("[CoreAI] loaded \(url.lastPathComponent) GPU-free (ANE-preferred)")
                 return model
             } catch {
-                print("[CoreAI] ANE-preferred specialization failed for \(url.lastPathComponent): \(error) — retrying .cpuOnly")
+                print(
+                    "[CoreAI] ANE-preferred specialization failed for \(url.lastPathComponent): \(error) — retrying .cpuOnly"
+                )
                 return try await loadCPUOnly(at: url)
             }
         }
 
-        var aotEnabled = env["COREAI_AOT"] != "NO"
+        var aotEnabled =
+            env["COREAI_AOT"] != "NO"
             && (UserDefaults.standard.object(forKey: "coreai.aot") == nil
                 || UserDefaults.standard.bool(forKey: "coreai.aot"))
         // COREAI_AOT_MODELS="encoder" (or "decoder,joint", …): restrict AOT
@@ -234,13 +240,18 @@ final class CoreAIEncoderRunner {
                 print("[CoreAI] loaded AOT GPU asset \(compiled.lastPathComponent)")
                 return model
             } catch {
-                print("[CoreAI] AOT asset \(compiled.lastPathComponent) failed with GPU options: \(error) — retrying default options")
+                print(
+                    "[CoreAI] AOT asset \(compiled.lastPathComponent) failed with GPU options: \(error) — retrying default options"
+                )
                 do {
                     let model = try await AIModel(contentsOf: compiled)
-                    print("[CoreAI] loaded AOT asset \(compiled.lastPathComponent) (default options)")
+                    print(
+                        "[CoreAI] loaded AOT asset \(compiled.lastPathComponent) (default options)")
                     return model
                 } catch {
-                    print("[CoreAI] AOT asset \(compiled.lastPathComponent) failed: \(error) — falling back to source .aimodel")
+                    print(
+                        "[CoreAI] AOT asset \(compiled.lastPathComponent) failed: \(error) — falling back to source .aimodel"
+                    )
                 }
             }
         }
@@ -248,7 +259,8 @@ final class CoreAIEncoderRunner {
         // (launch argument) requests runtime (JIT) GPU specialization of the
         // source .aimodel — for comparing GPU vs the default (ANE) plan
         // without AOT assets.
-        if env["COREAI_FORCE_GPU"] == "YES" || UserDefaults.standard.bool(forKey: "coreai.forceGPU") {
+        if env["COREAI_FORCE_GPU"] == "YES" || UserDefaults.standard.bool(forKey: "coreai.forceGPU")
+        {
             do {
                 let model = try await AIModel(
                     contentsOf: url,
@@ -256,13 +268,17 @@ final class CoreAIEncoderRunner {
                 print("[CoreAI] loaded \(url.lastPathComponent) with runtime GPU specialization")
                 return model
             } catch {
-                print("[CoreAI] runtime GPU specialization failed for \(url.lastPathComponent): \(error) — falling back to default")
+                print(
+                    "[CoreAI] runtime GPU specialization failed for \(url.lastPathComponent): \(error) — falling back to default"
+                )
             }
         }
         do {
             return try await AIModel(contentsOf: url)
         } catch {
-            print("[CoreAI] default specialization failed for \(url.lastPathComponent): \(error) — retrying app-group cache")
+            print(
+                "[CoreAI] default specialization failed for \(url.lastPathComponent): \(error) — retrying app-group cache"
+            )
             // The DEFAULT AIModelCache location is one suspect for the bare
             // ENOENT on the watchOS beta — retry with a cache rooted in our
             // own app-group container before falling back on compute pins.
@@ -270,9 +286,12 @@ final class CoreAIEncoderRunner {
                 do {
                     return try await AIModel.specialize(contentsOf: url, cache: cache)
                 } catch {
-                    print("[CoreAI] app-group cache specialization failed: \(error) — retrying .cpuOnly in app-group cache")
+                    print(
+                        "[CoreAI] app-group cache specialization failed: \(error) — retrying .cpuOnly in app-group cache"
+                    )
                     do {
-                        return try await AIModel.specialize(contentsOf: url, options: .cpuOnly, cache: cache)
+                        return try await AIModel.specialize(
+                            contentsOf: url, options: .cpuOnly, cache: cache)
                     } catch {
                         print("[CoreAI] app-group cpuOnly failed: \(error)")
                     }
@@ -285,7 +304,9 @@ final class CoreAIEncoderRunner {
                     contentsOf: url,
                     options: SpecializationOptions(preferredComputeUnitKind: .neuralEngine))
             } catch {
-                print("[CoreAI] ANE specialization failed for \(url.lastPathComponent): \(error) — retrying .cpuOnly")
+                print(
+                    "[CoreAI] ANE specialization failed for \(url.lastPathComponent): \(error) — retrying .cpuOnly"
+                )
                 return try await AIModel(contentsOf: url, options: .cpuOnly)
             }
         }
@@ -297,9 +318,12 @@ final class CoreAIEncoderRunner {
     private static func loadCPUOnly(at url: URL) async throws -> AIModel {
         if let cache = AIModelCache(appGroup: appGroupCacheId) {
             do {
-                return try await AIModel.specialize(contentsOf: url, options: .cpuOnly, cache: cache)
+                return try await AIModel.specialize(
+                    contentsOf: url, options: .cpuOnly, cache: cache)
             } catch {
-                print("[CoreAI] app-group .cpuOnly failed for \(url.lastPathComponent): \(error) — retrying plain .cpuOnly")
+                print(
+                    "[CoreAI] app-group .cpuOnly failed for \(url.lastPathComponent): \(error) — retrying plain .cpuOnly"
+                )
             }
         }
         return try await AIModel(contentsOf: url, options: .cpuOnly)
@@ -308,7 +332,9 @@ final class CoreAIEncoderRunner {
     /// Load all four shards. Throws if any is missing or unloadable — this is the
     /// on-device check of the staged int8 `.aimodel` assets.
     func load() async throws {
-        print("[CoreAI] device arch: \(AIModel.deviceArchitectureName), available compute: \(ComputeUnitKind.availableKinds)")
+        print(
+            "[CoreAI] device arch: \(AIModel.deviceArchitectureName), available compute: \(ComputeUnitKind.availableKinds)"
+        )
         var loaded: [AIModel] = []
         for (i, url) in shardURLs.enumerated() {
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -351,7 +377,9 @@ final class CoreAIEncoderRunner {
     /// shard's `length_out` (shard 0 takes the full mel length 233; shards 1-3
     /// take the post-pre-encode length). Matches FluidAudio's proven CoreML
     /// `runShardedEncoderIfAvailable`.
-    func encode(mel: [Float], frames T: Int, promptId: Int32) async throws -> (encoded: [Float], shape: [Int]) {
+    func encode(mel: [Float], frames T: Int, promptId: Int32) async throws -> (
+        encoded: [Float], shape: [Int]
+    ) {
         var data = mel
         // Hidden state threaded shard→shard as an NDArray. When its layout
         // matches the next shard's declared input it is passed straight
@@ -368,7 +396,8 @@ final class CoreAIEncoderRunner {
             } else {
                 // Escape hatch: per-chunk reload (the original reference
                 // behavior for stale-output-suspect stateless graphs).
-                guard let fresh = try model.loadFunction(named: model.functionNames.first ?? "main") else {
+                guard let fresh = try model.loadFunction(named: model.functionNames.first ?? "main")
+                else {
                     throw RunnerError.functionMissing(shardURLs[idx])
                 }
                 fn = fresh
@@ -387,15 +416,18 @@ final class CoreAIEncoderRunner {
                             inputs[name] = nd
                         } else {
                             let flat = try ndArrayToFloats(nd)
-                            inputs[name] = try makeFloatNDArray(fn, name: name, data: flat, shape: nd.shape)
+                            inputs[name] = try makeFloatNDArray(
+                                fn, name: name, data: flat, shape: nd.shape)
                         }
                     } else {
-                        inputs[name] = try makeFloatNDArray(fn, name: name, data: data, shape: shape)
+                        inputs[name] = try makeFloatNDArray(
+                            fn, name: name, data: data, shape: shape)
                     }
                 case "length":
                     inputs[name] = try makeInt32NDArray(fn, name: name, data: [length], shape: [1])
                 case "prompt_id":
-                    inputs[name] = try makeInt32NDArray(fn, name: name, data: [promptId], shape: [1])
+                    inputs[name] = try makeInt32NDArray(
+                        fn, name: name, data: [promptId], shape: [1])
                 case "cache_channel":
                     if let buf = shardCacheChannelND[idx] {
                         inputs[name] = buf
@@ -409,7 +441,8 @@ final class CoreAIEncoderRunner {
                         inputs[name] = try makeZeroNDArray(fn, name: name)
                     }
                 case "cache_len":
-                    inputs[name] = try makeInt32NDArray(fn, name: name, data: [shardCacheLen[idx]], shape: [1])
+                    inputs[name] = try makeInt32NDArray(
+                        fn, name: name, data: [shardCacheLen[idx]], shape: [1])
                 default:
                     inputs[name] = try makeZeroNDArray(fn, name: name)
                 }
@@ -436,7 +469,9 @@ final class CoreAIEncoderRunner {
             // matters with cached functions: the runtime may reuse a function's
             // output buffers on its next run, so we must own the cache storage
             // we feed back in.
-            if let chOut = outputs.remove("cache_channel_out")?.ndArray, shardCacheChannelND[idx] != nil {
+            if let chOut = outputs.remove("cache_channel_out")?.ndArray,
+                shardCacheChannelND[idx] != nil
+            {
                 try Self.copyContents(of: chOut, into: &shardCacheChannelND[idx]!)
             }
             if let tiOut = outputs.remove("cache_time_out")?.ndArray, shardCacheTimeND[idx] != nil {
@@ -498,19 +533,26 @@ final class CoreAIEncoderRunner {
         var inputs: [String: NDArray] = [:]
         for name in fn.descriptor.inputNames {
             switch name {
-            case "token": inputs[name] = try makeInt32NDArray(fn, name: name, data: [token], shape: [1, 1])
-            case "token_length": inputs[name] = try makeInt32NDArray(fn, name: name, data: [1], shape: [1])
-            case "h_in": inputs[name] = try makeFloatNDArray(fn, name: name, data: h, shape: [2, 1, 640])
-            case "c_in": inputs[name] = try makeFloatNDArray(fn, name: name, data: c, shape: [2, 1, 640])
+            case "token":
+                inputs[name] = try makeInt32NDArray(fn, name: name, data: [token], shape: [1, 1])
+            case "token_length":
+                inputs[name] = try makeInt32NDArray(fn, name: name, data: [1], shape: [1])
+            case "h_in":
+                inputs[name] = try makeFloatNDArray(fn, name: name, data: h, shape: [2, 1, 640])
+            case "c_in":
+                inputs[name] = try makeFloatNDArray(fn, name: name, data: c, shape: [2, 1, 640])
             default: inputs[name] = try makeZeroNDArray(fn, name: name)
             }
         }
         var outputs = try await fn.run(inputs: inputs)
         guard let dOut = outputs.remove("decoder_out")?.ndArray,
-              let hOut = outputs.remove("h_out")?.ndArray,
-              let cOut = outputs.remove("c_out")?.ndArray
+            let hOut = outputs.remove("h_out")?.ndArray,
+            let cOut = outputs.remove("c_out")?.ndArray
         else { throw RunnerError.outputMissing("decoder_out/h_out/c_out") }
-        return (try ndArrayToFloats(dOut), dOut.shape, try ndArrayToFloats(hOut), try ndArrayToFloats(cOut))
+        return (
+            try ndArrayToFloats(dOut), dOut.shape, try ndArrayToFloats(hOut),
+            try ndArrayToFloats(cOut)
+        )
     }
 
     /// One joint step: (encoderFrame[1024], decoderStep[640]) → logits[vocab].
@@ -522,8 +564,12 @@ final class CoreAIEncoderRunner {
         var inputs: [String: NDArray] = [:]
         for name in fn.descriptor.inputNames {
             switch name {
-            case "encoder": inputs[name] = try makeFloatNDArray(fn, name: name, data: encoderFrame, shape: [1, 1024, 1])
-            case "decoder": inputs[name] = try makeFloatNDArray(fn, name: name, data: decoderStep, shape: [1, 640, 1])
+            case "encoder":
+                inputs[name] = try makeFloatNDArray(
+                    fn, name: name, data: encoderFrame, shape: [1, 1024, 1])
+            case "decoder":
+                inputs[name] = try makeFloatNDArray(
+                    fn, name: name, data: decoderStep, shape: [1, 640, 1])
             default: inputs[name] = try makeZeroNDArray(fn, name: name)
             }
         }
@@ -546,8 +592,12 @@ final class CoreAIEncoderRunner {
         var inputs: [String: NDArray] = [:]
         for name in fn.descriptor.inputNames {
             switch name {
-            case "encoder": inputs[name] = try makeFloatNDArray(fn, name: name, data: encoder, shape: [1, 1024, tEnc])
-            case "decoder": inputs[name] = try makeFloatNDArray(fn, name: name, data: decoderStep, shape: [1, 640, 1])
+            case "encoder":
+                inputs[name] = try makeFloatNDArray(
+                    fn, name: name, data: encoder, shape: [1, 1024, tEnc])
+            case "decoder":
+                inputs[name] = try makeFloatNDArray(
+                    fn, name: name, data: decoderStep, shape: [1, 640, 1])
             default: inputs[name] = try makeZeroNDArray(fn, name: name)
             }
         }
@@ -569,25 +619,33 @@ final class CoreAIEncoderRunner {
         var inputs: [String: NDArray] = [:]
         for name in fn.descriptor.inputNames {
             switch name {
-            case "token": inputs[name] = try makeInt32NDArray(fn, name: name, data: [token], shape: [1, 1])
-            case "token_length": inputs[name] = try makeInt32NDArray(fn, name: name, data: [1], shape: [1])
-            case "h_in": inputs[name] = try makeFloatNDArray(fn, name: name, data: h, shape: [2, 1, 640])
-            case "c_in": inputs[name] = try makeFloatNDArray(fn, name: name, data: c, shape: [2, 1, 640])
-            case "encoder": inputs[name] = try makeFloatNDArray(fn, name: name, data: encoder, shape: [1, 1024, tEnc])
+            case "token":
+                inputs[name] = try makeInt32NDArray(fn, name: name, data: [token], shape: [1, 1])
+            case "token_length":
+                inputs[name] = try makeInt32NDArray(fn, name: name, data: [1], shape: [1])
+            case "h_in":
+                inputs[name] = try makeFloatNDArray(fn, name: name, data: h, shape: [2, 1, 640])
+            case "c_in":
+                inputs[name] = try makeFloatNDArray(fn, name: name, data: c, shape: [2, 1, 640])
+            case "encoder":
+                inputs[name] = try makeFloatNDArray(
+                    fn, name: name, data: encoder, shape: [1, 1024, tEnc])
             default: inputs[name] = try makeZeroNDArray(fn, name: name)
             }
         }
         var outputs = try await fn.run(inputs: inputs)
         guard let logits = outputs.remove("logits")?.ndArray,
-              let hOut = outputs.remove("h_out")?.ndArray,
-              let cOut = outputs.remove("c_out")?.ndArray
+            let hOut = outputs.remove("h_out")?.ndArray,
+            let cOut = outputs.remove("c_out")?.ndArray
         else { throw RunnerError.outputMissing("logits/h_out/c_out") }
         return (try ndArrayToFloats(logits), try ndArrayToFloats(hOut), try ndArrayToFloats(cOut))
     }
 
     // MARK: - NDArray helpers (verified pattern from CoreAIDiffusionModelFunction)
 
-    func makeFloatNDArray(_ fn: InferenceFunction, name: String, data: [Float], shape: [Int]) throws -> NDArray {
+    func makeFloatNDArray(_ fn: InferenceFunction, name: String, data: [Float], shape: [Int]) throws
+        -> NDArray
+    {
         guard case .ndArray(let nd) = fn.descriptor.inputDescriptor(of: name) else {
             throw RunnerError.unsupportedScalarType
         }
@@ -614,7 +672,9 @@ final class CoreAIEncoderRunner {
     /// `name`: row-major contiguous with the declared shape + scalar type.
     /// Interleaved ANE layouts (or shape/dtype drift) fall back to the
     /// flatten + rebuild path.
-    private static func matchesDeclaredInput(_ array: NDArray, fn: InferenceFunction, name: String) -> Bool {
+    private static func matchesDeclaredInput(_ array: NDArray, fn: InferenceFunction, name: String)
+        -> Bool
+    {
         guard case .ndArray(let nd) = fn.descriptor.inputDescriptor(of: name) else { return false }
         guard nd.shape == array.shape, nd.scalarType == array.scalarType else { return false }
         return isRowMajorContiguous(array)
@@ -625,7 +685,7 @@ final class CoreAIEncoderRunner {
             var contiguous = true
             array.view(as: T.self).withUnsafePointer { _, shape, strides in
                 var expected = 1
-                for d in (0..<shape.count).reversed() {
+                for d in (0 ..< shape.count).reversed() {
                     if strides[d] != expected {
                         contiguous = false
                         return
@@ -663,7 +723,9 @@ final class CoreAIEncoderRunner {
         }
     }
 
-    private static func copyTyped<T: BitwiseCopyable>(_ src: NDArray, _ dst: inout NDArray, as type: T.Type) {
+    private static func copyTyped<T: BitwiseCopyable>(
+        _ src: NDArray, _ dst: inout NDArray, as type: T.Type
+    ) {
         let total = src.shape.reduce(1, *)
         let flat = [T](unsafeUninitializedCapacity: total) { buf, initialized in
             src.view(as: T.self).withUnsafePointer { ptr, shape, strides in
@@ -671,7 +733,7 @@ final class CoreAIEncoderRunner {
                 // Fast path: row-major contiguous.
                 var expectedStride = 1
                 var isContiguous = true
-                for d in (0..<rank).reversed() {
+                for d in (0 ..< rank).reversed() {
                     if strides[d] != expectedStride {
                         isContiguous = false
                         break
@@ -683,9 +745,9 @@ final class CoreAIEncoderRunner {
                 } else {
                     // Slow path: walk row-major indices through actual strides.
                     var indices = [Int](repeating: 0, count: rank)
-                    for i in 0..<total {
+                    for i in 0 ..< total {
                         var offset = 0
-                        for d in 0..<rank { offset += indices[d] * strides[d] }
+                        for d in 0 ..< rank { offset += indices[d] * strides[d] }
                         buf[i] = ptr[offset]
                         var dim = rank - 1
                         while dim >= 0 {
@@ -710,15 +772,15 @@ final class CoreAIEncoderRunner {
         switch array.scalarType {
         case .float32:
             var v = array.mutableView(as: Float.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         #if !((os(macOS) || targetEnvironment(macCatalyst)) && arch(x86_64))
         case .float16:
             var v = array.mutableView(as: Float16.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         #endif
         case .int32:
             var v = array.mutableView(as: Int32.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         default:
             break
         }
@@ -732,27 +794,29 @@ final class CoreAIEncoderRunner {
         }
         // Descriptor shape has no dynamic dims for the caches; resolve to itself.
         let resolved = nd.resolvingDynamicDimensions(nd.shape)
-        let count = nd.shape.reduce(1, *)   // [Int] — element count
+        let count = nd.shape.reduce(1, *)  // [Int] — element count
         var array = NDArray(descriptor: resolved)
         switch resolved.scalarType {
         case .float32:
             var v = array.mutableView(as: Float.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         #if !((os(macOS) || targetEnvironment(macCatalyst)) && arch(x86_64))
         case .float16:
             var v = array.mutableView(as: Float16.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         #endif
         case .int32:
             var v = array.mutableView(as: Int32.self)
-            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0..<count { ptr[j] = 0 } }
+            v.withUnsafeMutablePointer { ptr, _, _ in for j in 0 ..< count { ptr[j] = 0 } }
         default:
             throw RunnerError.unsupportedScalarType
         }
         return array
     }
 
-    private func makeInt32NDArray(_ fn: InferenceFunction, name: String, data: [Int32], shape: [Int]) throws -> NDArray {
+    private func makeInt32NDArray(
+        _ fn: InferenceFunction, name: String, data: [Int32], shape: [Int]
+    ) throws -> NDArray {
         guard case .ndArray(let nd) = fn.descriptor.inputDescriptor(of: name) else {
             throw RunnerError.unsupportedScalarType
         }
@@ -769,7 +833,7 @@ final class CoreAIEncoderRunner {
         let total = array.shape.reduce(1, *)
         var result = [Int32](repeating: 0, count: total)
         array.view(as: Int32.self).withUnsafePointer { ptr, _, _ in
-            for i in 0..<total { result[i] = ptr[i] }
+            for i in 0 ..< total { result[i] = ptr[i] }
         }
         return result
     }
@@ -802,19 +866,22 @@ final class CoreAIEncoderRunner {
             // Fast path: row-major contiguous.
             var expectedStride = 1
             var isContiguous = true
-            for d in (0..<rank).reversed() {
-                if strides[d] != expectedStride { isContiguous = false; break }
+            for d in (0 ..< rank).reversed() {
+                if strides[d] != expectedStride {
+                    isContiguous = false
+                    break
+                }
                 expectedStride *= shape[d]
             }
             if isContiguous {
-                for i in 0..<total { result[i] = Float(ptr[i]) }
+                for i in 0 ..< total { result[i] = Float(ptr[i]) }
                 return
             }
             // Slow path: walk row-major indices through actual strides.
             var indices = [Int](repeating: 0, count: rank)
-            for i in 0..<total {
+            for i in 0 ..< total {
                 var offset = 0
-                for d in 0..<rank { offset += indices[d] * strides[d] }
+                for d in 0 ..< rank { offset += indices[d] * strides[d] }
                 result[i] = Float(ptr[offset])
                 var dim = rank - 1
                 while dim >= 0 {

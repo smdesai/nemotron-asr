@@ -6,7 +6,7 @@ import SwiftUI
 enum ChunkSize: Int, CaseIterable, Identifiable {
     case ms560 = 560
     case ms1120 = 1120
-    case ms2240 = 2240   // recommended / default
+    case ms2240 = 2240  // recommended / default
     case ms4480 = 4480
 
     var id: Int { rawValue }
@@ -93,24 +93,35 @@ enum FileTranscriptionMode: String, CaseIterable, Identifiable {
 @MainActor
 final class AppSettings: ObservableObject {
     @AppStorage("chunkSizeMs") private var chunkSizeRaw: Int = ChunkSize.default.rawValue
-    @AppStorage("languageCode") private var languageCodeStorage: String = ""   // "" == auto
-    @AppStorage("fileMode") private var fileModeRaw: String = FileTranscriptionMode.streamed.rawValue
+    @AppStorage("languageCode") private var languageCodeStorage: String = ""  // "" == auto
+    @AppStorage("fileMode") private var fileModeRaw: String = FileTranscriptionMode.streamed
+        .rawValue
     @AppStorage("backend") private var backendRaw: String = InferenceBackend.default.rawValue
+    @AppStorage("sentimentAnalysisEnabled") private var sentimentAnalysisEnabledStorage = true
 
     var backend: InferenceBackend {
         get { InferenceBackend(rawValue: backendRaw) ?? .default }
-        set { backendRaw = newValue.rawValue; objectWillChange.send() }
+        set {
+            backendRaw = newValue.rawValue
+            objectWillChange.send()
+        }
     }
 
     var chunkSize: ChunkSize {
         get { ChunkSize(rawValue: chunkSizeRaw) ?? .default }
-        set { chunkSizeRaw = newValue.rawValue; objectWillChange.send() }
+        set {
+            chunkSizeRaw = newValue.rawValue
+            objectWillChange.send()
+        }
     }
 
     /// `nil` means auto-detect.
     var languageCode: String? {
         get { languageCodeStorage.isEmpty ? nil : languageCodeStorage }
-        set { languageCodeStorage = newValue ?? ""; objectWillChange.send() }
+        set {
+            languageCodeStorage = newValue ?? ""
+            objectWillChange.send()
+        }
     }
 
     var language: ASRLanguage {
@@ -120,6 +131,17 @@ final class AppSettings: ObservableObject {
 
     var fileMode: FileTranscriptionMode {
         get { FileTranscriptionMode(rawValue: fileModeRaw) ?? .streamed }
-        set { fileModeRaw = newValue.rawValue; objectWillChange.send() }
+        set {
+            fileModeRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
+    var sentimentAnalysisEnabled: Bool {
+        get { sentimentAnalysisEnabledStorage }
+        set {
+            sentimentAnalysisEnabledStorage = newValue
+            objectWillChange.send()
+        }
     }
 }

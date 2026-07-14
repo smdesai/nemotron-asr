@@ -30,8 +30,8 @@ final class MelFrontend {
     static let preemph: Float = 0.97
     static let logGuard: Float = 5.960464477539063e-08
 
-    private let fb: [Float]        // [nMels * nFreq] row-major mel filterbank
-    private let win512: [Float]    // Hann(winLength) centered in nFFT
+    private let fb: [Float]  // [nMels * nFreq] row-major mel filterbank
+    private let win512: [Float]  // Hann(winLength) centered in nFFT
     private let fftSetup: FFTSetup
     private let log2n: vDSP_Length
 
@@ -56,7 +56,8 @@ final class MelFrontend {
         let fbFloats = try Self.readFloats(fbURL, name: "mel_filterbank.f32")
         let winFloats = try Self.readFloats(winURL, name: "mel_window.f32")
         guard fbFloats.count == Self.nMels * Self.nFreq else {
-            throw FrontendError.badResourceSize("mel_filterbank.f32", fbFloats.count, Self.nMels * Self.nFreq)
+            throw FrontendError.badResourceSize(
+                "mel_filterbank.f32", fbFloats.count, Self.nMels * Self.nFreq)
         }
         guard winFloats.count == Self.winLength else {
             throw FrontendError.badResourceSize("mel_window.f32", winFloats.count, Self.winLength)
@@ -66,7 +67,7 @@ final class MelFrontend {
         // Center the Hann window in the n_fft frame.
         var w = [Float](repeating: 0, count: Self.nFFT)
         let off = (Self.nFFT - Self.winLength) / 2  // 56
-        for i in 0..<Self.winLength { w[off + i] = winFloats[i] }
+        for i in 0 ..< Self.winLength { w[off + i] = winFloats[i] }
         self.win512 = w
 
         self.log2n = vDSP_Length(log2(Float(Self.nFFT)))
@@ -92,20 +93,23 @@ final class MelFrontend {
     ///   number of frames.
     func melSpectrogram(_ samples: [Float]) -> (mel: [Float], frames: Int) {
         let nSamples = samples.count
-        let hop = Self.hop, nFFT = Self.nFFT, half = nFFT / 2
-        let nMels = Self.nMels, nFreq = Self.nFreq
+        let hop = Self.hop
+        let nFFT = Self.nFFT
+        let half = nFFT / 2
+        let nMels = Self.nMels
+        let nFreq = Self.nFreq
 
         // 1. preemphasis
         var pre = [Float](repeating: 0, count: nSamples)
         if nSamples > 0 { pre[0] = samples[0] }
         if nSamples > 1 {
-            for i in 1..<nSamples { pre[i] = samples[i] - Self.preemph * samples[i - 1] }
+            for i in 1 ..< nSamples { pre[i] = samples[i] - Self.preemph * samples[i - 1] }
         }
 
         // center pad n_fft/2 each side
         let pad = nFFT / 2
         var padded = [Float](repeating: 0, count: nSamples + 2 * pad)
-        for i in 0..<nSamples { padded[i + pad] = pre[i] }
+        for i in 0 ..< nSamples { padded[i + pad] = pre[i] }
 
         // frame count for center=True STFT
         let T = max(0, (padded.count - nFFT) / hop + 1)
@@ -117,7 +121,7 @@ final class MelFrontend {
         var realp = [Float](repeating: 0, count: half)
         var imagp = [Float](repeating: 0, count: half)
 
-        for t in 0..<T {
+        for t in 0 ..< T {
             let startIdx = t * hop
             padded.withUnsafeBufferPointer { pb in
                 vDSP_vmul(pb.baseAddress! + startIdx, 1, win512, 1, &frame, 1, vDSP_Length(nFFT))
@@ -127,7 +131,8 @@ final class MelFrontend {
                 imagp.withUnsafeMutableBufferPointer { ip in
                     var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
                     frame.withUnsafeBytes { raw in
-                        raw.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) { cp in
+                        raw.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: half) {
+                            cp in
                             vDSP_ctoz(cp, 2, &split, 1, vDSP_Length(half))
                         }
                     }
@@ -138,7 +143,7 @@ final class MelFrontend {
                     let nyq = ip[0] * scale
                     powerAll[powerBase] = dc * dc
                     powerAll[powerBase + half] = nyq * nyq
-                    for k in 1..<half {
+                    for k in 1 ..< half {
                         let re = rp[k] * scale
                         let im = ip[k] * scale
                         powerAll[powerBase + k] = re * re + im * im
@@ -153,7 +158,8 @@ final class MelFrontend {
         var powerT = [Float](repeating: 0, count: nFreq * T)
         vDSP_mtrans(powerAll, 1, &powerT, 1, vDSP_Length(nFreq), vDSP_Length(T))
         var melOut = [Float](repeating: 0, count: nMels * T)
-        vDSP_mmul(fb, 1, powerT, 1, &melOut, 1, vDSP_Length(nMels), vDSP_Length(T), vDSP_Length(nFreq))
+        vDSP_mmul(
+            fb, 1, powerT, 1, &melOut, 1, vDSP_Length(nMels), vDSP_Length(T), vDSP_Length(nFreq))
         melOut.withUnsafeMutableBufferPointer { buf in
             var logGuard = Self.logGuard
             vDSP_vsadd(buf.baseAddress!, 1, &logGuard, buf.baseAddress!, 1, vDSP_Length(nMels * T))
@@ -164,8 +170,8 @@ final class MelFrontend {
         // 6. zero trailing frames beyond valid seq_len = floor(n_samples / hop)
         let seqLen = nSamples / hop
         if seqLen < T {
-            for t in seqLen..<T {
-                for m in 0..<nMels { melOut[m * T + t] = 0 }
+            for t in seqLen ..< T {
+                for m in 0 ..< nMels { melOut[m * T + t] = 0 }
             }
         }
         return (melOut, T)

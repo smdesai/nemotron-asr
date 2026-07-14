@@ -49,14 +49,16 @@ enum CoreAIResidencyProbe {
     /// Probe all `encoder_shard_{0..3}.aimodel` in the given `coreai/` directory.
     static func probeShards(in dir: URL) -> [ShardReport] {
         var reports: [ShardReport] = []
-        for i in 0..<4 {
+        for i in 0 ..< 4 {
             let url = CoreAIAssets.encoderShardURL(i, in: dir)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             do {
                 let asset = try AIModelAsset(contentsOf: url)
                 guard let summary = try asset.summary(includingStatistics: true) else {
-                    reports.append(ShardReport(name: "shard_\(i)", computeTypes: ["<no summary>"],
-                                               storageTypes: [], topOps: []))
+                    reports.append(
+                        ShardReport(
+                            name: "shard_\(i)", computeTypes: ["<no summary>"],
+                            storageTypes: [], topOps: []))
                     continue
                 }
                 let storage = summary.storageTypes
@@ -65,15 +67,18 @@ enum CoreAIResidencyProbe {
                 let ops = summary.operationDistribution
                     .map { (op: $0.operationName, count: $0.count) }
                     .sorted { $0.count > $1.count }
-                reports.append(ShardReport(
-                    name: "shard_\(i)",
-                    computeTypes: summary.computeTypes,
-                    storageTypes: storage,
-                    topOps: Array(ops.prefix(12))
-                ))
+                reports.append(
+                    ShardReport(
+                        name: "shard_\(i)",
+                        computeTypes: summary.computeTypes,
+                        storageTypes: storage,
+                        topOps: Array(ops.prefix(12))
+                    ))
             } catch {
-                reports.append(ShardReport(name: "shard_\(i)", computeTypes: ["<error: \(error)>"],
-                                           storageTypes: [], topOps: []))
+                reports.append(
+                    ShardReport(
+                        name: "shard_\(i)", computeTypes: ["<error: \(error)>"],
+                        storageTypes: [], topOps: []))
             }
         }
         return reports
@@ -100,9 +105,10 @@ enum CoreAIResidencyProbe {
             if !opsStr.isEmpty { lines.append("    top ops: \(opsStr)") }
         }
         let anyFP32 = reports.contains { $0.hasFP32Storage }
-        lines.append(anyFP32
-            ? "⚠️ Some shards still store fp32 tensors — those ops fall back off the ANE."
-            : "✓ No fp32 tensor storage in any shard — ANE-eligible (scalar constants only).")
+        lines.append(
+            anyFP32
+                ? "⚠️ Some shards still store fp32 tensors — those ops fall back off the ANE."
+                : "✓ No fp32 tensor storage in any shard — ANE-eligible (scalar constants only).")
         let text = lines.joined(separator: "\n")
         print(text)
         return text

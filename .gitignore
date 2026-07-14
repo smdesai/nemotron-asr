@@ -1,5 +1,6 @@
 # Staged watch model bundle (large; regenerate with scripts/fetch-watch-asr-models.sh)
 /NemotronWatchModels/
+/NemotronWatchSentiment/
 
 Resources/
 

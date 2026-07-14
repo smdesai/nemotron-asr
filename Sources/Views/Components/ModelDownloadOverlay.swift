@@ -80,7 +80,9 @@ struct ModelFailureOverlay: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.brandGradient))
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.brandGradient)
+                )
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
@@ -91,4 +93,3 @@ struct ModelFailureOverlay: View {
         .shadow(color: .black.opacity(0.4), radius: 30, y: 12)
     }
 }
-

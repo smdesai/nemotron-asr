@@ -1,5 +1,5 @@
-import Accelerate
 import AVFoundation
+import Accelerate
 @preconcurrency import CoreML
 import Foundation
 import SwiftUI
@@ -16,15 +16,20 @@ import SwiftUI
 final class WatchASRManager: ObservableObject {
 
     enum Phase: Equatable {
-        case loading           // loading models on launch
-        case ready             // models loaded, awaiting input
-        case listening         // microphone is live
+        case loading  // loading models on launch
+        case ready  // models loaded, awaiting input
+        case starting  // activating the microphone session
+        case listening  // microphone is live
+        case stopping  // draining the final ASR chunk
         case failed(String)
     }
 
     @Published private(set) var phase: Phase = .loading
     /// Running (streamed) transcript shown in the ScrollView.
     @Published var transcript: String = ""
+    /// Language tag emitted by the ASR decoder (for example, "en-US").
+    /// Sentiment analysis uses this instead of re-detecting short phrases.
+    @Published private(set) var detectedLanguageCode: String?
     /// Status line for the UI.
     @Published private(set) var status: String = "Loading models…"
     /// Smoothed mic input level 0...1 driving the record button's level ring.
@@ -50,6 +55,13 @@ final class WatchASRManager: ObservableObject {
     var isListening: Bool {
         if case .listening = phase { return true }
         return false
+    }
+
+    var isTransitioning: Bool {
+        switch phase {
+        case .starting, .stopping: return true
+        default: return false
+        }
     }
 
     // MARK: - Model loading (on launch)
@@ -121,12 +133,16 @@ final class WatchASRManager: ObservableObject {
             granted = await WatchMicrophoneCapture.requestPermission()
         }
         guard granted else {
-            phase = .failed(WatchMicrophoneCapture.CaptureError.permissionDenied.localizedDescription)
+            phase = .failed(
+                WatchMicrophoneCapture.CaptureError.permissionDenied.localizedDescription)
             status = "Microphone denied."
             return
         }
 
+        phase = .starting
+        status = "Starting microphone…"
         transcript = ""
+        detectedLanguageCode = nil
 
         // Live partials hop to the main actor to update @Published transcript.
         await manager.setPartialCallback { [weak self] text in
@@ -138,7 +154,7 @@ final class WatchASRManager: ObservableObject {
         self.micCapture = capture
 
         do {
-            let stream = try capture.start()
+            let stream = try await capture.start()
             phase = .listening
             status = "Listening…"
             micTask = Task { [weak self] in
@@ -149,6 +165,13 @@ final class WatchASRManager: ObservableObject {
                         self.updateMicLevel(block)
                         let started = Date()
                         _ = try await manager.process(samples: block)
+                        let partial = await manager.getPartialTranscript()
+                        if !partial.isEmpty {
+                            self.transcript = partial
+                        }
+                        if let language = await manager.detectedLanguage() {
+                            self.detectedLanguageCode = language
+                        }
                         let elapsed = Date().timeIntervalSince(started)
                         // Mic blocks are ~0.26 s; only blocks that ran a full
                         // encoder chunk take meaningful time. Surface those.
@@ -156,6 +179,8 @@ final class WatchASRManager: ObservableObject {
                             self.lastChunkSeconds = elapsed
                         }
                     }
+                } catch  where Task.isCancelled || error is CancellationError {
+                    return
                 } catch {
                     let message = self.friendly(error)
                     self.logger.error("process(samples:) failed: \(error)")
@@ -180,10 +205,16 @@ final class WatchASRManager: ObservableObject {
 
     func stop() async {
         guard case .listening = phase else { return }
-        micCapture?.stop()
-        micTask?.cancel()
+        phase = .stopping
+        status = "Finishing…"
+
+        let processingTask = micTask
+        processingTask?.cancel()
         micTask = nil
+        let capture = micCapture
         micCapture = nil
+        await capture?.stop()
+        await processingTask?.value
         micLevel = 0
 
         guard let manager else {
@@ -194,6 +225,7 @@ final class WatchASRManager: ObservableObject {
         do {
             let finalText = try await manager.finish()
             if !finalText.isEmpty { transcript = finalText }
+            detectedLanguageCode = await manager.detectedLanguage()
         } catch {
             // Keep whatever partial we have; nothing fatal on stop.
         }
@@ -205,6 +237,7 @@ final class WatchASRManager: ObservableObject {
 
     func clearTranscript() {
         transcript = ""
+        detectedLanguageCode = nil
         lastChunkSeconds = nil
     }
 

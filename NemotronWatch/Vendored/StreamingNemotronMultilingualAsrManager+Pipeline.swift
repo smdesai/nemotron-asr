@@ -151,11 +151,15 @@ extension StreamingNemotronMultilingualAsrManager {
                         "prompt_id": MLFeatureValue(multiArray: promptIdArray),
                     ])
                     if let opts = encoderPredictionOptions {
-                        encoderOutput = try await encoder.prediction(from: statefulInput, using: state, options: opts)
+                        encoderOutput = try await encoder.prediction(
+                            from: statefulInput, using: state, options: opts)
                     } else {
-                        encoderOutput = try await encoder.prediction(from: statefulInput, using: state)
+                        encoderOutput = try await encoder.prediction(
+                            from: statefulInput, using: state)
                     }
-                    if let newLen = encoderOutput.featureValue(for: "cache_len_out")?.multiArrayValue {
+                    if let newLen = encoderOutput.featureValue(for: "cache_len_out")?
+                        .multiArrayValue
+                    {
                         self.cacheLen = newLen
                     }
                 } else {
@@ -168,7 +172,8 @@ extension StreamingNemotronMultilingualAsrManager {
                         "prompt_id": MLFeatureValue(multiArray: promptIdArray),
                     ])
                     if let opts = encoderPredictionOptions {
-                        encoderOutput = try await encoder.prediction(from: encoderInput, options: opts)
+                        encoderOutput = try await encoder.prediction(
+                            from: encoderInput, options: opts)
                     } else {
                         encoderOutput = try await encoder.prediction(from: encoderInput)
                     }
@@ -240,7 +245,8 @@ extension StreamingNemotronMultilingualAsrManager {
                 // TEMP env-var disable used during the session-9 A/B bench that
                 // measures baseline vs +triple-stage. Remove after the doc table
                 // is finalized.
-                let tripleStageDisabled = ProcessInfo.processInfo.environment["FLUIDAUDIO_DISABLE_TRIPLE_STAGE"] != nil
+                let tripleStageDisabled =
+                    ProcessInfo.processInfo.environment["FLUIDAUDIO_DISABLE_TRIPLE_STAGE"] != nil
                 guard let next = nextChunkSamples,
                     !mlStateActive,
                     !shardedEncoderActive,
@@ -279,7 +285,8 @@ extension StreamingNemotronMultilingualAsrManager {
         // state-plumbing or fp16 conversion edge case across chunks).
         // Gated behind FLUIDAUDIO_ENABLE_NATIVE_RNNT=1 so the build stays
         // usable. See what_failed_rtfx_table.md for full status.
-        let nativeEnabled = ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_NATIVE_RNNT"] != nil
+        let nativeEnabled =
+            ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_NATIVE_RNNT"] != nil
         if nativeEnabled, let native = self.nativeRnnt {
             try runNativeInnerLoop(
                 encoded: encoded,
@@ -405,7 +412,8 @@ extension StreamingNemotronMultilingualAsrManager {
         // joint matmul on single-core CPU and was slower). Hypothesis:
         // LSTM is small enough that CPU is competitive, while ANE wins
         // big on the joint matmul. Gated by FLUIDAUDIO_ENABLE_HYBRID_NATIVE_LSTM.
-        let hybridEnabled = ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_HYBRID_NATIVE_LSTM"] != nil
+        let hybridEnabled =
+            ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_HYBRID_NATIVE_LSTM"] != nil
         if hybridEnabled, let native = self.nativeRnnt, let coremlJoint = self.joint {
             try await runHybridNativeLSTMInnerLoop(
                 encoded: encoded,
@@ -447,7 +455,8 @@ extension StreamingNemotronMultilingualAsrManager {
         // env var so we can keep the code for future redesigns (e.g. cached
         // enc_proj + single-frame joint walk) without affecting default
         // routing. See what_failed_rtfx_table.md for full analysis.
-        let speculativeEnabled = ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_SPECULATIVE_BATCHED"] != nil
+        let speculativeEnabled =
+            ProcessInfo.processInfo.environment["FLUIDAUDIO_ENABLE_SPECULATIVE_BATCHED"] != nil
         if speculativeEnabled, let jb = self.jointBatched, let decoder = self.decoder {
             try await runSpeculativeBatchedDecode(
                 encoded: encoded,
@@ -481,7 +490,7 @@ extension StreamingNemotronMultilingualAsrManager {
             return
         }
 
-        for t in 0..<numEncoderFrames {
+        for t in 0 ..< numEncoderFrames {
             let encStep: MLMultiArray
             if let buf = encoderStepBuf {
                 fillEncoderStep(into: buf, from: encoded, timeIndex: t)
@@ -502,8 +511,9 @@ extension StreamingNemotronMultilingualAsrManager {
             }
 
             // Greedy decode loop (max 10 symbols per frame)
-            let disablePrealloc = ProcessInfo.processInfo.environment["FLUIDAUDIO_DISABLE_TOKEN_PREALLOC"] != nil
-            for _ in 0..<10 {
+            let disablePrealloc =
+                ProcessInfo.processInfo.environment["FLUIDAUDIO_DISABLE_TOKEN_PREALLOC"] != nil
+            for _ in 0 ..< 10 {
                 // Reuse pre-allocated buffers from the manager when present;
                 // tokenInput just needs slot 0 refilled with currentToken
                 // (tokenLen is a constant 1 already set at loadModels).
@@ -553,7 +563,8 @@ extension StreamingNemotronMultilingualAsrManager {
                         let fh = b3Output.featureValue(for: "h_out")?.multiArrayValue,
                         let fc = b3Output.featureValue(for: "c_out")?.multiArrayValue
                     else {
-                        throw ASRError.processingFailed("B3+B1 fused decoder_joint_noencproj failed")
+                        throw ASRError.processingFailed(
+                            "B3+B1 fused decoder_joint_noencproj failed")
                     }
                     predToken = findMaxIndex(fl)
                     hOut = fh
@@ -573,7 +584,9 @@ extension StreamingNemotronMultilingualAsrManager {
                     } else {
                         tripleOutput = try await dja.prediction(from: tripleInput)
                     }
-                    guard let tokenIdArr = tripleOutput.featureValue(for: "token_id")?.multiArrayValue,
+                    guard
+                        let tokenIdArr = tripleOutput.featureValue(for: "token_id")?
+                            .multiArrayValue,
                         let fh = tripleOutput.featureValue(for: "h_out")?.multiArrayValue,
                         let fc = tripleOutput.featureValue(for: "c_out")?.multiArrayValue
                     else {
@@ -614,11 +627,14 @@ extension StreamingNemotronMultilingualAsrManager {
                     ])
                     let decoderOutput: MLFeatureProvider
                     if let opts = decoderPredictionOptions {
-                        decoderOutput = try await decoder.prediction(from: decoderInput, options: opts)
+                        decoderOutput = try await decoder.prediction(
+                            from: decoderInput, options: opts)
                     } else {
                         decoderOutput = try await decoder.prediction(from: decoderInput)
                     }
-                    guard let decoderOut = decoderOutput.featureValue(for: "decoder_out")?.multiArrayValue,
+                    guard
+                        let decoderOut = decoderOutput.featureValue(for: "decoder_out")?
+                            .multiArrayValue,
                         let dh = decoderOutput.featureValue(for: "h_out")?.multiArrayValue,
                         let dc = decoderOutput.featureValue(for: "c_out")?.multiArrayValue
                     else {
@@ -643,7 +659,8 @@ extension StreamingNemotronMultilingualAsrManager {
                     cOut = dc
                 } else {
                     throw ASRError.processingFailed(
-                        "No decode path: need a fused decoder_joint (B1/B3/B2) or bare decoder+joint")
+                        "No decode path: need a fused decoder_joint (B1/B3/B2) or bare decoder+joint"
+                    )
                 }
 
                 if predToken == config.blankIdx {
@@ -735,7 +752,9 @@ extension StreamingNemotronMultilingualAsrManager {
                     "[native] encoded.dataType=\(encoded.dataType.rawValue) shape=\(encoded.shape) strides=\(encoded.strides)\n"
                         .utf8))
             FileHandle.standardError.write(
-                Data("[native] currentH.dataType=\(currentH.dataType.rawValue) shape=\(currentH.shape)\n".utf8))
+                Data(
+                    "[native] currentH.dataType=\(currentH.dataType.rawValue) shape=\(currentH.shape)\n"
+                        .utf8))
             FileHandle.standardError.write(
                 Data("[native] currentToken=\(currentToken) blankIdx=\(config.blankIdx)\n".utf8))
         }
@@ -764,9 +783,9 @@ extension StreamingNemotronMultilingualAsrManager {
             ? nil
             : encoded.dataPointer.bindMemory(to: Float.self, capacity: encoded.count)
 
-        for t in 0..<numEncoderFrames {
+        for t in 0 ..< numEncoderFrames {
             // Gather encoded[0, :, t] into a contiguous Float32 buffer.
-            for d in 0..<encoderDim {
+            for d in 0 ..< encoderDim {
                 let idx = 0 * encStride0 + d * encStride1 + t * encStride2
                 if encIsF16 {
                     encStep[d] = f16ToF32(encPtr16![idx])
@@ -775,12 +794,13 @@ extension StreamingNemotronMultilingualAsrManager {
                 }
             }
             if debugNative && self.chunkCount == 1 && t == 0 {
-                FileHandle.standardError.write(Data("[native] frame0 encStep[0..5]=\(Array(encStep.prefix(5)))\n".utf8))
+                FileHandle.standardError.write(
+                    Data("[native] frame0 encStep[0..5]=\(Array(encStep.prefix(5)))\n".utf8))
             }
 
             // Inner greedy: up to 10 token emissions per encoder frame.
             var symInFrame = 0
-            for _ in 0..<10 {
+            for _ in 0 ..< 10 {
                 let predToken: Int = encStep.withUnsafeBufferPointer { bufPtr in
                     return native.step(currentToken: currentToken, encStep: bufPtr.baseAddress!)
                 }
@@ -821,7 +841,9 @@ extension StreamingNemotronMultilingualAsrManager {
     /// Local copy of tokenizerPiece (forId:) — needed because the existing
     /// tokenizerPiece is `private`. (Could promote that to internal but
     /// keeping local to avoid touching unrelated code.)
-    private func tokenizerPieceForLangTag(forId id: Int, tokenizer: NemotronMultilingualTokenizer) -> String? {
+    private func tokenizerPieceForLangTag(forId id: Int, tokenizer: NemotronMultilingualTokenizer)
+        -> String?
+    {
         let decoded = tokenizer.decode(ids: [id])
         if let lang = decoded.detectedLanguage {
             return "<\(lang)>"
@@ -862,11 +884,12 @@ extension StreamingNemotronMultilingualAsrManager {
         native.setState(h: currentH, c: currentC)
 
         // Per-token dec_out buffer for CoreML joint input (shape [1, 640, 1]).
-        let decOut = try MLMultiArray(shape: [1, NSNumber(value: native.hidden), 1], dataType: .float32)
+        let decOut = try MLMultiArray(
+            shape: [1, NSNumber(value: native.hidden), 1], dataType: .float32)
 
         let blankIdx = config.blankIdx
 
-        for t in 0..<numEncoderFrames {
+        for t in 0 ..< numEncoderFrames {
             let encStep: MLMultiArray
             if let buf = encoderStepBuf {
                 fillEncoderStep(into: buf, from: encoded, timeIndex: t)
@@ -875,7 +898,7 @@ extension StreamingNemotronMultilingualAsrManager {
                 encStep = try extractEncoderStep(from: encoded, timeIndex: t)
             }
 
-            for _ in 0..<10 {
+            for _ in 0 ..< 10 {
                 // Native LSTM forward — fills `decOut` in place.
                 native.stepLSTMOnly(currentToken: currentToken, decOut: decOut)
 
@@ -942,7 +965,7 @@ extension StreamingNemotronMultilingualAsrManager {
             throw ASRError.processingFailed("encoder_pre_encode failed to produce hidden")
         }
 
-        for idx in 0..<encoderShards.count {
+        for idx in 0 ..< encoderShards.count {
             let shard = encoderShards[idx]
             let input = try MLDictionaryFeatureProvider(dictionary: [
                 "hidden": MLFeatureValue(multiArray: hidden),
@@ -968,7 +991,8 @@ extension StreamingNemotronMultilingualAsrManager {
             hiddenLength = len
             if idx == encoderShards.count - 1 {
                 guard let encoded = output.featureValue(for: "encoded")?.multiArrayValue else {
-                    throw ASRError.processingFailed("encoder_shard_\(idx) failed to produce encoded")
+                    throw ASRError.processingFailed(
+                        "encoder_shard_\(idx) failed to produce encoded")
                 }
                 return encoded
             }
@@ -1007,16 +1031,16 @@ extension StreamingNemotronMultilingualAsrManager {
         let isF16 = (encoded.dataType == .float16)
         if isF16 {
             let srcPtr = encoded.dataPointer.bindMemory(to: UInt16.self, capacity: encoded.count)
-            for t in 0..<T_enc {
-                for d in 0..<encoderDim {
+            for t in 0 ..< T_enc {
+                for d in 0 ..< encoderDim {
                     let srcIdx = 0 * stride0 + d * stride1 + t * stride2
                     encodedRowMajor[t * encoderDim + d] = Float(Float16(bitPattern: srcPtr[srcIdx]))
                 }
             }
         } else {
             let srcPtr = encoded.dataPointer.bindMemory(to: Float.self, capacity: encoded.count)
-            for t in 0..<T_enc {
-                for d in 0..<encoderDim {
+            for t in 0 ..< T_enc {
+                for d in 0 ..< encoderDim {
                     let srcIdx = 0 * stride0 + d * stride1 + t * stride2
                     encodedRowMajor[t * encoderDim + d] = srcPtr[srcIdx]
                 }
@@ -1026,7 +1050,8 @@ extension StreamingNemotronMultilingualAsrManager {
         // Validate outBuf has expected shape [1, T_enc, hidden] fp32
         precondition(outBuf.dataType == .float32, "encoder_proj outBuf must be fp32")
         precondition(
-            outBuf.shape.count == 3 && outBuf.shape[1].intValue == T_enc && outBuf.shape[2].intValue == hidden,
+            outBuf.shape.count == 3 && outBuf.shape[1].intValue == T_enc
+                && outBuf.shape[2].intValue == hidden,
             "encoder_proj outBuf shape mismatch")
         let dstPtr = outBuf.dataPointer.bindMemory(to: Float.self, capacity: outBuf.count)
 
@@ -1120,7 +1145,8 @@ extension StreamingNemotronMultilingualAsrManager {
             encProjIsF16
             ? nil
             : encoderProj.dataPointer.bindMemory(to: Float.self, capacity: encoderProj.count)
-        let dstPtr = encProjBatchBuf.dataPointer.bindMemory(to: Float.self, capacity: encProjBatchBuf.count)
+        let dstPtr = encProjBatchBuf.dataPointer.bindMemory(
+            to: Float.self, capacity: encProjBatchBuf.count)
 
         var t = 0
         while t < numEncoderFrames {
@@ -1166,24 +1192,26 @@ extension StreamingNemotronMultilingualAsrManager {
 
             // ── Step 2: copy encoder_proj[:, t:t+kActual, :] into batched buf.
             // (pad the unused [kActual..K) slots with zeros for safe joint call)
-            for k in 0..<K {
+            for k in 0 ..< K {
                 let srcT = t + k
                 let dstBase = k * projDim
                 if k < kActual {
                     if encProjIsF16 {
-                        for d in 0..<projDim {
-                            let srcIdx = 0 * encProjStride0 + srcT * encProjStride1 + d * encProjStride2
+                        for d in 0 ..< projDim {
+                            let srcIdx =
+                                0 * encProjStride0 + srcT * encProjStride1 + d * encProjStride2
                             dstPtr[dstBase + d] = Float(Float16(bitPattern: srcF16Ptr![srcIdx]))
                         }
                     } else {
-                        for d in 0..<projDim {
-                            let srcIdx = 0 * encProjStride0 + srcT * encProjStride1 + d * encProjStride2
+                        for d in 0 ..< projDim {
+                            let srcIdx =
+                                0 * encProjStride0 + srcT * encProjStride1 + d * encProjStride2
                             dstPtr[dstBase + d] = srcF32Ptr![srcIdx]
                         }
                     }
                 } else {
                     // Padding zone — zero out (won't be read in the for-loop below either)
-                    for d in 0..<projDim {
+                    for d in 0 ..< projDim {
                         dstPtr[dstBase + d] = 0
                     }
                 }
@@ -1225,26 +1253,28 @@ extension StreamingNemotronMultilingualAsrManager {
             let vocabContiguous = (logitsStride3 == 1)
             var firstNonBlankAt = -1
             var emittedToken = blankIdx
-            for kk in 0..<kActual {
+            for kk in 0 ..< kActual {
                 var bestIdx = blankIdx
                 let frameBase = 0 * logitsStride0 + kk * logitsStride1 + 0 * logitsStride2
                 if !logitsIsF16, vocabContiguous, let f32 = logitsF32Ptr {
                     var maxVal: Float = 0
                     var maxIdx: vDSP_Length = 0
-                    vDSP_maxvi(f32.advanced(by: frameBase), 1, &maxVal, &maxIdx, vDSP_Length(vocabSize))
+                    vDSP_maxvi(
+                        f32.advanced(by: frameBase), 1, &maxVal, &maxIdx, vDSP_Length(vocabSize))
                     bestIdx = Int(maxIdx)
                 } else {
                     var bestVal: Float = -.greatestFiniteMagnitude
                     if logitsIsF16 {
-                        for v in 0..<vocabSize {
-                            let val = Float(Float16(bitPattern: logitsF16Ptr![frameBase + v * logitsStride3]))
+                        for v in 0 ..< vocabSize {
+                            let val = Float(
+                                Float16(bitPattern: logitsF16Ptr![frameBase + v * logitsStride3]))
                             if val > bestVal {
                                 bestVal = val
                                 bestIdx = v
                             }
                         }
                     } else {
-                        for v in 0..<vocabSize {
+                        for v in 0 ..< vocabSize {
                             let val = logitsF32Ptr![frameBase + v * logitsStride3]
                             if val > bestVal {
                                 bestVal = val
@@ -1308,16 +1338,18 @@ extension StreamingNemotronMultilingualAsrManager {
                 let drainEncProjStep: MLMultiArray?
                 if self.decoderJointNoEncProj != nil {
                     if let projBuf = encoderProjStepBuf {
-                        fillEncoderProjStep(into: projBuf, from: encoderProj, timeIndex: drainFrameT)
+                        fillEncoderProjStep(
+                            into: projBuf, from: encoderProj, timeIndex: drainFrameT)
                         drainEncProjStep = projBuf
                     } else {
-                        drainEncProjStep = try extractEncoderProjStep(from: encoderProj, timeIndex: drainFrameT)
+                        drainEncProjStep = try extractEncoderProjStep(
+                            from: encoderProj, timeIndex: drainFrameT)
                     }
                 } else {
                     drainEncProjStep = nil
                 }
 
-                for _ in 0..<9 {
+                for _ in 0 ..< 9 {
                     let tokInput2: MLMultiArray
                     if let buf = tokenInputBuf {
                         tokInput2 = buf
@@ -1360,7 +1392,9 @@ extension StreamingNemotronMultilingualAsrManager {
                         } else {
                             djneOutput = try await djne.prediction(from: djneInput)
                         }
-                        guard let djneLogits = djneOutput.featureValue(for: "logits")?.multiArrayValue,
+                        guard
+                            let djneLogits = djneOutput.featureValue(for: "logits")?
+                                .multiArrayValue,
                             let djneH = djneOutput.featureValue(for: "h_out")?.multiArrayValue,
                             let djneC = djneOutput.featureValue(for: "c_out")?.multiArrayValue
                         else { throw ASRError.processingFailed("Drain B3+B1 failed") }
@@ -1381,7 +1415,9 @@ extension StreamingNemotronMultilingualAsrManager {
                         } else {
                             djaOutput = try await dja.prediction(from: djaInput)
                         }
-                        guard let tokenIdArr = djaOutput.featureValue(for: "token_id")?.multiArrayValue,
+                        guard
+                            let tokenIdArr = djaOutput.featureValue(for: "token_id")?
+                                .multiArrayValue,
                             let djaH = djaOutput.featureValue(for: "h_out")?.multiArrayValue,
                             let djaC = djaOutput.featureValue(for: "c_out")?.multiArrayValue
                         else { throw ASRError.processingFailed("Drain B2 failed") }
@@ -1551,7 +1587,7 @@ extension StreamingNemotronMultilingualAsrManager {
             let blankIdx = config.blankIdx
             var firstNonBlankIdx: Int? = nil
             var firstNonBlankToken: Int = -1
-            for i in t..<numEncoderFrames {
+            for i in t ..< numEncoderFrames {
                 let token = argmaxFrame(logits: logits, frame: i)
                 if token != blankIdx {
                     firstNonBlankIdx = i
@@ -1611,7 +1647,7 @@ extension StreamingNemotronMultilingualAsrManager {
         func scan<T: Comparable>(_ ptr: UnsafeMutablePointer<T>) -> Int {
             var bestIdx = 0
             var bestVal = ptr[base]
-            for v in 1..<vocab {
+            for v in 1 ..< vocab {
                 let val = ptr[base + v * stride3]
                 if val > bestVal {
                     bestVal = val
@@ -1631,7 +1667,8 @@ extension StreamingNemotronMultilingualAsrManager {
     /// Read a piece from the underlying base tokenizer through the multilingual
     /// wrapper. Kept as a separate helper so the pipeline doesn't need to
     /// reach inside `NemotronMultilingualTokenizer`.
-    private func tokenizerPiece(forId id: Int, tokenizer: NemotronMultilingualTokenizer) -> String? {
+    private func tokenizerPiece(forId id: Int, tokenizer: NemotronMultilingualTokenizer) -> String?
+    {
         // The wrapper doesn't expose the underlying piece map directly. We
         // round-trip through `decode(ids:)` on a single-id list: if the id
         // is itself a lang-tag we get the detected language back; otherwise
@@ -1648,7 +1685,8 @@ extension StreamingNemotronMultilingualAsrManager {
     // two managers stay independent; the math is small and self-contained).
 
     internal func createAudioArray(_ samples: [Float]) throws -> MLMultiArray {
-        let array = try MLMultiArray(shape: [1, NSNumber(value: samples.count)], dataType: .float32)
+        let array = try MLMultiArray(
+            shape: [1, NSNumber(value: samples.count)], dataType: .float32)
         let ptr = array.dataPointer.bindMemory(to: Float.self, capacity: samples.count)
         ptr.update(from: samples, count: samples.count)
         return array
@@ -1676,7 +1714,8 @@ extension StreamingNemotronMultilingualAsrManager {
             array = buf
             audioLen = lenBuf
         } else {
-            array = try MLMultiArray(shape: [1, NSNumber(value: samples.count)], dataType: .float32)
+            array = try MLMultiArray(
+                shape: [1, NSNumber(value: samples.count)], dataType: .float32)
             let ptr = array.dataPointer.bindMemory(to: Float.self, capacity: samples.count)
             ptr.update(from: samples, count: samples.count)
             audioLen = try MLMultiArray(shape: [1], dataType: .int32)
@@ -1829,8 +1868,8 @@ extension StreamingNemotronMultilingualAsrManager {
         let dstStride1 = cache.strides[1].intValue
         let dstStride2 = cache.strides[2].intValue
         let startT = chunkFrames - cacheFrames
-        for mel in 0..<melFeatures {
-            for t in 0..<cacheFrames {
+        for mel in 0 ..< melFeatures {
+            for t in 0 ..< cacheFrames {
                 dstPtr[mel * dstStride1 + t * dstStride2] =
                     srcPtr[mel * srcStride1 + (startT + t) * srcStride2]
             }
@@ -1866,16 +1905,16 @@ extension StreamingNemotronMultilingualAsrManager {
             let cacheFrames = melCache.shape[2].intValue
             let cacheStride1 = melCache.strides[1].intValue
             let cacheStride2 = melCache.strides[2].intValue
-            for mel in 0..<melFeatures {
-                for t in 0..<cacheFrames {
+            for mel in 0 ..< melFeatures {
+                for t in 0 ..< cacheFrames {
                     resultPtr[mel * resultStride1 + t * resultStride2] =
                         cachePtr[mel * cacheStride1 + t * cacheStride2]
                 }
             }
         }
         let copyFrames = min(chunkFrames, totalMelFrames - preEncodeCache)
-        for mel in 0..<melFeatures {
-            for t in 0..<copyFrames {
+        for mel in 0 ..< melFeatures {
+            for t in 0 ..< copyFrames {
                 resultPtr[mel * resultStride1 + (preEncodeCache + t) * resultStride2] =
                     chunkPtr[mel * chunkStride1 + t * chunkStride2]
             }
@@ -1911,8 +1950,8 @@ extension StreamingNemotronMultilingualAsrManager {
             let cacheStride1 = melCache.strides[1].intValue
             let cacheStride2 = melCache.strides[2].intValue
 
-            for mel in 0..<config.melFeatures {
-                for t in 0..<cacheFrames {
+            for mel in 0 ..< config.melFeatures {
+                for t in 0 ..< cacheFrames {
                     let srcIdx = 0 * cacheStride0 + mel * cacheStride1 + t * cacheStride2
                     let dstIdx = 0 * resultStride0 + mel * resultStride1 + t * resultStride2
                     resultPtr[dstIdx] = cachePtr[srcIdx]
@@ -1922,10 +1961,12 @@ extension StreamingNemotronMultilingualAsrManager {
 
         // Copy chunk mel (after cache position)
         let copyFrames = min(chunkFrames, totalFrames - config.preEncodeCache)
-        for mel in 0..<config.melFeatures {
-            for t in 0..<copyFrames {
+        for mel in 0 ..< config.melFeatures {
+            for t in 0 ..< copyFrames {
                 let srcIdx = 0 * chunkStride0 + mel * chunkStride1 + t * chunkStride2
-                let dstIdx = 0 * resultStride0 + mel * resultStride1 + (config.preEncodeCache + t) * resultStride2
+                let dstIdx =
+                    0 * resultStride0 + mel * resultStride1 + (config.preEncodeCache + t)
+                    * resultStride2
                 resultPtr[dstIdx] = chunkPtr[srcIdx]
             }
         }
@@ -1954,8 +1995,8 @@ extension StreamingNemotronMultilingualAsrManager {
 
         let startT = chunkFrames - cacheFrames
 
-        for mel in 0..<config.melFeatures {
-            for t in 0..<cacheFrames {
+        for mel in 0 ..< config.melFeatures {
+            for t in 0 ..< cacheFrames {
                 let srcIdx = 0 * srcStride0 + mel * srcStride1 + (startT + t) * srcStride2
                 let dstIdx = 0 * dstStride0 + mel * dstStride1 + t * dstStride2
                 dstPtr[dstIdx] = srcPtr[srcIdx]
@@ -1968,14 +2009,16 @@ extension StreamingNemotronMultilingualAsrManager {
     /// Fill a pre-allocated [1, dim, 1] buffer with one time-step from
     /// encoded [1, dim, T]. Zero allocations per call. Used inside the
     /// inner RNN-T greedy loop.
-    internal func fillEncoderStep(into dest: MLMultiArray, from encoded: MLMultiArray, timeIndex: Int) {
+    internal func fillEncoderStep(
+        into dest: MLMultiArray, from encoded: MLMultiArray, timeIndex: Int
+    ) {
         let dim = encoded.shape[1].intValue
         let srcPtr = encoded.dataPointer.bindMemory(to: Float.self, capacity: encoded.count)
         let dstPtr = dest.dataPointer.bindMemory(to: Float.self, capacity: dest.count)
         let stride0 = encoded.strides[0].intValue
         let stride1 = encoded.strides[1].intValue
         let stride2 = encoded.strides[2].intValue
-        for c in 0..<dim {
+        for c in 0 ..< dim {
             let srcIdx = c * stride1 + timeIndex * stride2
             dstPtr[c] = srcPtr[srcIdx]
         }
@@ -1985,19 +2028,23 @@ extension StreamingNemotronMultilingualAsrManager {
     /// Fill a pre-allocated [1, 1, joint_dim] buffer with one time-step from
     /// encoder_proj [1, T, joint_dim]. Mirrors fillEncoderStep for the B3
     /// path.
-    internal func fillEncoderProjStep(into dest: MLMultiArray, from encoderProj: MLMultiArray, timeIndex: Int) {
+    internal func fillEncoderProjStep(
+        into dest: MLMultiArray, from encoderProj: MLMultiArray, timeIndex: Int
+    ) {
         let jointDim = encoderProj.shape[2].intValue
         let srcPtr = encoderProj.dataPointer.bindMemory(to: Float.self, capacity: encoderProj.count)
         let dstPtr = dest.dataPointer.bindMemory(to: Float.self, capacity: dest.count)
         let stride1 = encoderProj.strides[1].intValue
         let stride2 = encoderProj.strides[2].intValue
-        for c in 0..<jointDim {
+        for c in 0 ..< jointDim {
             let srcIdx = timeIndex * stride1 + c * stride2
             dstPtr[c] = srcPtr[srcIdx]
         }
     }
 
-    internal func extractEncoderStep(from encoded: MLMultiArray, timeIndex: Int) throws -> MLMultiArray {
+    internal func extractEncoderStep(from encoded: MLMultiArray, timeIndex: Int) throws
+        -> MLMultiArray
+    {
         // encoded: [1, 1024, T] -> step: [1, 1024, 1]
         let dim = encoded.shape[1].intValue
         let step = try MLMultiArray(shape: [1, NSNumber(value: dim), 1], dataType: .float32)
@@ -2009,7 +2056,7 @@ extension StreamingNemotronMultilingualAsrManager {
         let stride1 = encoded.strides[1].intValue
         let stride2 = encoded.strides[2].intValue
 
-        for c in 0..<dim {
+        for c in 0 ..< dim {
             let srcIdx = 0 * stride0 + c * stride1 + timeIndex * stride2
             dstPtr[c] = srcPtr[srcIdx]
         }
@@ -2019,7 +2066,9 @@ extension StreamingNemotronMultilingualAsrManager {
 
     /// B3 helper: extract one frame from the per-chunk pre-projected encoder
     /// output. Layout is [1, T, 640] (B=1 batch, T=time, 640=joint_dim).
-    internal func extractEncoderProjStep(from encoderProj: MLMultiArray, timeIndex: Int) throws -> MLMultiArray {
+    internal func extractEncoderProjStep(from encoderProj: MLMultiArray, timeIndex: Int) throws
+        -> MLMultiArray
+    {
         let jointDim = encoderProj.shape[2].intValue
         let step = try MLMultiArray(shape: [1, 1, NSNumber(value: jointDim)], dataType: .float32)
 
@@ -2030,7 +2079,7 @@ extension StreamingNemotronMultilingualAsrManager {
         let stride1 = encoderProj.strides[1].intValue
         let stride2 = encoderProj.strides[2].intValue
 
-        for c in 0..<jointDim {
+        for c in 0 ..< jointDim {
             let srcIdx = 0 * stride0 + timeIndex * stride1 + c * stride2
             dstPtr[c] = srcPtr[srcIdx]
         }
@@ -2052,7 +2101,7 @@ extension StreamingNemotronMultilingualAsrManager {
         let stride2 = decoderOut.strides[2].intValue
 
         let firstT = 0
-        for c in 0..<hidden {
+        for c in 0 ..< hidden {
             let srcIdx = 0 * stride0 + c * stride1 + firstT * stride2
             dstPtr[c] = srcPtr[srcIdx]
         }
