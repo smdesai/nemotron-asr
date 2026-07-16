@@ -1,12 +1,6 @@
 import AVFoundation
 import Foundation
 
-// AudioConverter is vendored into this target (NemotronWatch/Vendored) — no
-// external FluidAudio package.
-#if canImport(FluidAudio)
-import FluidAudio
-#endif
-
 /// Captures microphone audio, resamples it to 16 kHz mono `[Float]`, and
 /// delivers it **in order** via an `AsyncStream`. Also reports a smoothed
 /// input level for live waveform visualisation.
