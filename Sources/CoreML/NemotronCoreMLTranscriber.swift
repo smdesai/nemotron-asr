@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 /// Small public CoreML-only facade over the vendored Nemotron multilingual ASR
@@ -35,6 +36,19 @@ public final class NemotronCoreMLTranscriber {
     private var micCapture: MicrophoneCapture?
     private var micTask: Task<Void, Never>?
 
+    /// Whether the current/most recent listening session should retain raw
+    /// samples for later export.
+    private var retainAudio: Bool = false
+    /// Raw 16 kHz mono samples captured during a retaining session, in the
+    /// order they were produced. Cap enforced in `startListening`'s mic loop.
+    private var retainedSamples: [Float] = []
+    /// Peak absolute amplitude seen across the retaining session's samples.
+    /// Lets hosts distinguish "mic captured silence" (e.g. an idle virtual
+    /// input device) from "speech wasn't recognized".
+    public private(set) var recordedPeakAmplitude: Float = 0
+    /// Hard cap on retained samples: 30 minutes at 16 kHz.
+    private static let maxRetainedSamples = 16_000 * 60 * 30
+
     public init(languageCode: String? = nil, chunkMs: Int = 2240) {
         self.languageCode = languageCode
         self.chunkMs = chunkMs
@@ -70,7 +84,12 @@ public final class NemotronCoreMLTranscriber {
         phase = .ready
     }
 
-    public func startListening() async throws {
+    /// Starts a listening session.
+    /// - Parameter retainAudio: When `true`, raw captured samples are kept
+    ///   in memory (up to a 30-minute cap) so the session's audio can later
+    ///   be exported via `exportRecording(to:)`. Defaults to `false` for
+    ///   source compatibility with existing callers.
+    public func startListening(retainAudio: Bool = false) async throws {
         guard !isListening else { return }
 
         let granted: Bool
@@ -85,6 +104,9 @@ public final class NemotronCoreMLTranscriber {
         guard let manager, phase == .ready else { return }
 
         transcript = ""
+        self.retainAudio = retainAudio
+        retainedSamples.removeAll()
+        recordedPeakAmplitude = 0
         await manager.setPartialCallback { [weak self] text in
             Task { @MainActor in self?.transcript = text }
         }
@@ -99,6 +121,16 @@ public final class NemotronCoreMLTranscriber {
             do {
                 for await block in stream {
                     if Task.isCancelled { break }
+                    if self.retainAudio {
+                        self.recordedPeakAmplitude = block.reduce(
+                            self.recordedPeakAmplitude
+                        ) { max($0, abs($1)) }
+                        if self.retainedSamples.count < Self.maxRetainedSamples {
+                            // Cap retention at 30 minutes of audio; drop further
+                            // samples from the retained buffer once reached.
+                            self.retainedSamples.append(contentsOf: block)
+                        }
+                    }
                     _ = try await manager.process(samples: block)
                 }
             } catch {
@@ -139,6 +171,53 @@ public final class NemotronCoreMLTranscriber {
         micTask = nil
         micCapture = nil
         phase = .ready
+    }
+
+    /// Duration, in seconds, of the samples currently retained from the most
+    /// recent `startListening(retainAudio: true)` session. Zero if no audio
+    /// has been retained.
+    public var recordedDuration: TimeInterval {
+        Double(retainedSamples.count) / 16_000
+    }
+
+    /// Writes the samples retained from the most recent
+    /// `startListening(retainAudio: true)` session to `url` as a 16-bit PCM,
+    /// mono, 16 kHz WAV file. The retained samples are left untouched, so
+    /// this may be called more than once.
+    public func exportRecording(to url: URL) throws {
+        guard !retainedSamples.isEmpty else {
+            throw TranscriberError.noRecordedAudio
+        }
+
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )!
+        guard
+            let buffer = AVAudioPCMBuffer(
+                pcmFormat: format,
+                frameCapacity: AVAudioFrameCount(retainedSamples.count)
+            )
+        else {
+            throw TranscriberError.noRecordedAudio
+        }
+        buffer.frameLength = buffer.frameCapacity
+        retainedSamples.withUnsafeBufferPointer { source in
+            buffer.floatChannelData![0].update(from: source.baseAddress!, count: source.count)
+        }
+
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: outputSettings)
+        try file.write(from: buffer)
     }
 
     private func loadShared(code: String?, chunkMs: Int, key: String) async throws
@@ -189,6 +268,7 @@ public final class NemotronCoreMLTranscriber {
 public enum TranscriberError: LocalizedError {
     case modelsNotBundled
     case variantNotBundled(ship: String, tier: String)
+    case noRecordedAudio
 
     public var errorDescription: String? {
         switch self {
@@ -196,6 +276,9 @@ public enum TranscriberError: LocalizedError {
             return "Nemotron ASR models are not bundled in this build."
         case .variantNotBundled(let ship, let tier):
             return "Nemotron ASR model variant \(ship)/\(tier) is not bundled in this build."
+        case .noRecordedAudio:
+            return
+                "No recorded audio is available to export. Start listening with retainAudio: true first."
         }
     }
 }
