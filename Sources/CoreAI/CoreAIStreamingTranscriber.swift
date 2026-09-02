@@ -169,10 +169,13 @@ final class CoreAIStreamingTranscriber {
     /// decoded transcript.
     ///
     /// `onPartial`, if provided, is called after each chunk with the running
-    /// transcript so the UI can stream text as it is generated.
+    /// transcript so the UI can stream text as it is generated. `onProgress`,
+    /// if provided, is called after every chunk with the fraction of chunks
+    /// processed (0...1), including chunks that emitted no tokens.
     func transcribe(
         samples: [Float],
-        onPartial: ((String) -> Void)? = nil
+        onPartial: ((String) -> Void)? = nil,
+        onProgress: ((Double) -> Void)? = nil
     ) async throws -> String {
         reset()
         let hop = MelFrontend.hop
@@ -207,12 +210,15 @@ final class CoreAIStreamingTranscriber {
             // Stream the running transcript after each chunk (only when it grew).
             if let onPartial, accumulatedTokenIds.count != before {
                 onPartial(tokenizer.decode(ids: accumulatedTokenIds).text)
-                // Yield so the MainActor can paint the partial before the next
-                // chunk's compute monopolises the thread.
-                await Task.yield()
             }
             pos += chunkSamples
             chunkIdx += 1
+            onProgress?(Double(chunkIdx) / Double(max(1, nChunks)))
+            if onPartial != nil || onProgress != nil {
+                // Yield so the MainActor can paint the partial/progress before
+                // the next chunk's compute monopolises the thread.
+                await Task.yield()
+            }
         }
         let text = tokenizer.decode(ids: accumulatedTokenIds).text
         print("[CoreAI-T] DONE: \(accumulatedTokenIds.count) tokens → \"\(text.prefix(80))\"")

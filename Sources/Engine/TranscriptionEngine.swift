@@ -402,7 +402,13 @@ final class TranscriptionEngine: ObservableObject {
                 streamed
                 ? { [weak self] text in self?.transcript = text }
                 : nil
-            let text = try await transcriber.transcribe(samples: samples, onPartial: onPartial)
+            let text = try await transcriber.transcribe(
+                samples: samples,
+                onPartial: onPartial,
+                onProgress: { [weak self] fraction in
+                    self?.fileProgress = min(0.99, fraction)
+                }
+            )
             isStreaming = false
             let elapsed = Date().timeIntervalSince(started)
             let duration = Double(samples.count) / 16000.0
