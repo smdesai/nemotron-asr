@@ -22,6 +22,7 @@ let package = Package(
             sources: [
                 "Sources/Audio/MicrophoneCapture.swift",
                 "Sources/CoreML/NemotronCoreMLTranscriber.swift",
+                "Sources/CoreML/NemotronModelDownloader.swift",
                 "Sources/Models/ASRLanguage.swift",
                 "NemotronWatch/Vendored/AppLogger.swift",
                 "NemotronWatch/Vendored/AsrTypes.swift",
@@ -39,10 +40,9 @@ let package = Package(
                 "NemotronWatch/Vendored/StreamingNemotronMultilingualAsrManager+Shared.swift",
                 "NemotronWatch/Vendored/SystemInfo.swift",
                 "NemotronWatch/Vendored/Tokenizer.swift",
-            ],
-            resources: [
-                .copy("Resources/Models")
             ]
+            // No bundled resources: model variants are downloaded from the Hugging Face Hub
+            // at runtime by NemotronModelDownloader (or supplied via `modelsRoot:`).
         )
     ]
 )
