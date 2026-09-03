@@ -21,6 +21,7 @@ let package = Package(
             path: ".",
             sources: [
                 "Sources/Audio/MicrophoneCapture.swift",
+                "Sources/CoreML/Float16Compat.swift",
                 "Sources/CoreML/NemotronCoreMLTranscriber.swift",
                 "Sources/CoreML/NemotronModelDownloader.swift",
                 "Sources/Models/ASRLanguage.swift",
