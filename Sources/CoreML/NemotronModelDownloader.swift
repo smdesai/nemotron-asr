@@ -62,7 +62,7 @@ public final class NemotronModelDownloader: Sendable {
 
     // MARK: - Repo coordinates
 
-    public static let repoId = "smdesai/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b-CoreML"
+    public static let repoId = "smdesai/Nemotron-3.5-ASR-Streaming-Multilingual-0.6b"
     public static let revision = "main"
 
     public init() {}
