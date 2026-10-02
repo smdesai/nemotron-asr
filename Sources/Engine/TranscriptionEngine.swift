@@ -59,6 +59,9 @@ final class TranscriptionEngine: ObservableObject {
 
     /// Real-time factor of the last completed run (xRT), for a little stat chip.
     @Published private(set) var lastRTFx: Double?
+    /// Per-stage CoreML timing of the last file run (prep / encoder / decoder
+    /// seconds + chunk count), for BenchmarkRunner. nil on the Core AI path.
+    private(set) var lastStageTimes: String?
 
     /// Core AI on-device residency report (compute types + dtype histogram per
     /// shard). Populated by `prepareCoreAI`; surfaced in Settings for debugging.
@@ -250,11 +253,27 @@ final class TranscriptionEngine: ObservableObject {
         return shared
     }
 
+    /// Root of the `<ship>/<tier>ms/` model tree: the app bundle's `Models/`, or —
+    /// for on-device A/B benchmarking without reinstalling — a tree copied into
+    /// the app container and named by the `NEMOTRON_MODELS_ROOT` launch env var
+    /// (path relative to the container, e.g. `Documents/Models`).
+    private static func modelsRoot() -> URL? {
+        if let rel = ProcessInfo.processInfo.environment["NEMOTRON_MODELS_ROOT"], !rel.isEmpty {
+            let url =
+                rel.hasPrefix("/")
+                ? URL(fileURLWithPath: rel)
+                : URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(rel)
+            print("[Engine] models root override: \(url.path)")
+            return url
+        }
+        return Bundle.main.resourceURL?.appendingPathComponent("Models")
+    }
+
     /// Resolve the bundled directory for a given ship + chunk tier.
     private func bundledVariantDirectory(code: String?, chunkMs: Int) throws -> URL {
         let ship = shipDirectory(for: code)  // "latin" or "multilingual"
         let tier = "\(chunkMs)ms"
-        guard let modelsRoot = Bundle.main.resourceURL?.appendingPathComponent("Models") else {
+        guard let modelsRoot = Self.modelsRoot() else {
             throw EngineError.modelNotBundled(ship: ship, tier: tier)
         }
         let variantDir =
@@ -276,7 +295,7 @@ final class TranscriptionEngine: ObservableObject {
     private func coreaiDirectory(code: String?, chunkMs: Int) throws -> URL {
         let ship = shipDirectory(for: code)
         let tier = "\(chunkMs)ms"
-        guard let modelsRoot = Bundle.main.resourceURL?.appendingPathComponent("Models") else {
+        guard let modelsRoot = Self.modelsRoot() else {
             throw EngineError.modelNotBundled(ship: ship, tier: tier)
         }
         let dir =
@@ -595,6 +614,10 @@ final class TranscriptionEngine: ObservableObject {
             let elapsed = Date().timeIntervalSince(started)
             let duration = Double(totalSamples) / 16000.0
             lastRTFx = elapsed > 0 ? duration / elapsed : nil
+            lastStageTimes = String(
+                format: "prep %.2fs enc %.2fs dec %.2fs chunks %d",
+                Double(await manager.prepNanos) / 1e9, Double(await manager.encNanos) / 1e9,
+                Double(await manager.decNanos) / 1e9, await manager.chunkCount)
 
             phase = .ready
             isStreaming = false

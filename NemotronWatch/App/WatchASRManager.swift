@@ -80,9 +80,18 @@ final class WatchASRManager: ObservableObject {
     /// Load the bundled multilingual `2240ms` models. Called once on launch.
     func load() async {
         guard manager == nil else { return }
-        // NOTE: Core AI probe disabled — watchOS 27 / m11 exposes only CPU (no ANE)
-        // and the CPU compile path crashes in libODIECompiler. Re-enable
-        // `WatchCoreAIProbe.run()` (+ stage a shard) to re-test on a future beta.
+        // Core AI probe builds: when NemotronWatchCoreAIProbe/ is staged (see
+        // nemotron-asr-conversion/convert_models.sh --watch-coreai-probe), run
+        // the Core AI feasibility/speed probe INSTEAD of the CoreML pipeline and
+        // show its report. Normal builds don't bundle the folder.
+        if let probeDir = WatchCoreAIProbe.bundledDirectory {
+            phase = .loading
+            status = "Core AI probe…"
+            let report = await WatchCoreAIProbe.run(dir: probeDir)
+            phase = .failed("Core AI probe\n" + report)
+            status = "Core AI probe done."
+            return
+        }
         phase = .loading
         status = "Loading models…"
 
@@ -111,6 +120,14 @@ final class WatchASRManager: ObservableObject {
 
             self.shared = shared
             self.manager = mgr
+            // Bench builds (NemotronWatchBench/bench.wav staged): time the file,
+            // then show the report instead of the ready screen.
+            if let audio = WatchBench.bundledAudio {
+                status = "Benchmarking…"
+                let report = await WatchBench.run(audio: audio, manager: mgr)
+                phase = .failed("CoreML bench\n" + report)
+                return
+            }
             phase = .ready
             status = "Ready"
         } catch {

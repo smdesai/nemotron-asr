@@ -128,6 +128,22 @@ targets:
         excludes:
           - Info.plist
       - path: Sentiment
+      # Core AI encoder runner, shared with iOS, for WatchCoreAIProbe.
+      - path: Sources/CoreAI/CoreAIEncoderRunner.swift
+      - path: Sources/CoreAI/MelFrontend.swift
+      # Core AI probe assets (encoder_shard_{0..3}_int8.aimodel). Only present in
+      # probe builds; when bundled, the app runs WatchCoreAIProbe instead of the
+      # CoreML pipeline. Delete the folder (and re-run xcodegen) to go back.
+      - path: NemotronWatchCoreAIProbe
+        type: folder
+        buildPhase: resources
+        optional: true
+      # CoreML file-bench audio (bench.wav, 16 kHz mono). Only present in bench
+      # builds; when bundled, WatchBench times it after the CoreML load.
+      - path: NemotronWatchBench
+        type: folder
+        buildPhase: resources
+        optional: true
       # Folder reference: pre-compiled .mlmodelc bundles are copied verbatim
       # into a NemotronWatchModels/ subdirectory of the app bundle.
       - path: NemotronWatchModels

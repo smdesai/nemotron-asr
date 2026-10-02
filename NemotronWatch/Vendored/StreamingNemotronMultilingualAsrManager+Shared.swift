@@ -414,7 +414,14 @@ extension StreamingNemotronMultilingualAsrManager {
 
         // Per-stream NativeRnntInner (has its own LSTM state buffers).
         if let nativeDir = shared.nativeWeightsDir {
+            #if os(watchOS)
+            let started = Date()
+            print("[Load] native_weights start")
+            #endif
             self.nativeRnnt = NativeRnntInner(directory: nativeDir)
+            #if os(watchOS)
+            print("[Load] native_weights done \(String(format: "%.2f", Date().timeIntervalSince(started)))s ok=\(self.nativeRnnt != nil)")
+            #endif
         }
 
         // Per-stream cache/state init
@@ -545,7 +552,15 @@ extension StreamingNemotronMultilingualAsrManager {
             logger.info(
                 "Loading optional shared \(logName) from \(compiledName) with computeUnits=\(Self.computeUnitsDescription(configuration))"
             )
+            #if os(watchOS)
+            // watchOS: AppLogger never reaches stdout, so trace loads with print
+            // (visible via `devicectl device process launch --console`).
+            print("[Load] \(logName) start (\(Self.computeUnitsDescription(configuration)))")
+            #endif
             let m = try await MLModel.load(contentsOf: compiledURL, configuration: configuration)
+            #if os(watchOS)
+            print("[Load] \(logName) done \(String(format: "%.2f", Date().timeIntervalSince(started)))s")
+            #endif
             logger.info(
                 "Loaded shared \(compiledName) in \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
             )

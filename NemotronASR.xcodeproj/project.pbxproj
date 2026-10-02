@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		0133F1B7494003DBBC31465E /* AudioConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 064903508C0482D324B586CE /* AudioConverter.swift */; };
+		0140947492F94733FD5F43C0 /* MelFrontend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 069F5D9664D4F66153406D0B /* MelFrontend.swift */; };
+		0CCA7E8395A874D8F6FCB9A1 /* NemotronModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7D00D469E3F604C7D4C5E0 /* NemotronModelDownloader.swift */; };
 		1897FF6AD4DCC8EA55AF1B9A /* NemotronASRApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A3655132F7AC6FE3818F19 /* NemotronASRApp.swift */; };
 		1B7C7D3E2F597DA986D2D04B /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC96C3F2EC623818D4E33191 /* TranscriptionEngine.swift */; };
 		1BCA18E9AE8ADD2D32EA38CA /* Tokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E0E943DDC96A7DC3ECAC7F /* Tokenizer.swift */; };
@@ -20,12 +22,16 @@
 		36507B075091A363002EA6F9 /* Tokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E0E943DDC96A7DC3ECAC7F /* Tokenizer.swift */; };
 		37064A5D2B471726B9C93856 /* AsrTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891B93C532B38871848F9FD1 /* AsrTypes.swift */; };
 		370BE8084DCC246826CE04B5 /* StreamingAsrUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F635C1A6B60E74CBE3BFD68 /* StreamingAsrUtils.swift */; };
+		38096B96975C3E33577AEA75 /* BenchmarkRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F99F7E3411128335BD0A2DB /* BenchmarkRunner.swift */; };
+		384DF6872519D12313512162 /* NemotronWatchCoreAIProbe in Resources */ = {isa = PBXBuildFile; fileRef = 9B2C6D8DC683E1111218522F /* NemotronWatchCoreAIProbe */; };
+		3F007E5AF242E6A10AF0BADC /* NemotronWatchBench in Resources */ = {isa = PBXBuildFile; fileRef = 792C0A16D1053E8F595B839C /* NemotronWatchBench */; };
 		4022BC34A697F83CAAAA1870 /* AsrTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891B93C532B38871848F9FD1 /* AsrTypes.swift */; };
 		40CF2EC9813E792DBD68114E /* TranscriptionActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23F4B4D83B664C7E5052130 /* TranscriptionActivityAttributes.swift */; };
 		435B323B6F7EB0728F96FDAB /* NemotronASRWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56B66084C14C88030B8ACC25 /* NemotronASRWidgetsBundle.swift */; };
 		44A1051023EE36803F100D2D /* ModelNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA4B47B80F66FE65D976EA7 /* ModelNames.swift */; };
 		549AEAE24C7729C974940442 /* WatchASRManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BBE4329ADFDEA7A9D2DB17 /* WatchASRManager.swift */; };
 		56BEA87E05B6B19EE2625F12 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 11FD915C60D61F0C899B4CE0 /* Assets.xcassets */; };
+		581427732BA932A66B2C6F1B /* WatchBench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FFF0A96CED80080AA4AF797 /* WatchBench.swift */; };
 		59828A736529BCC51692CF32 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF22C31E18F20A4451EEBF8 /* Theme.swift */; };
 		5AEA4CA925FBE94DE3F94E06 /* NativeRnntInner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C26CE0DA904BE7B0763A9B8 /* NativeRnntInner.swift */; };
 		5C958AB7B81A9E654E28A25C /* MLModelConfigurationUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F131F04D8A4F8DD20776235 /* MLModelConfigurationUtils.swift */; };
@@ -54,6 +60,7 @@
 		93DC2EB9BC90DC31CC5C1F45 /* TranscriptionLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CE3E0A45305BDD963FD550 /* TranscriptionLiveActivity.swift */; };
 		9534C1746914100D8F2BD64D /* TranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA24B2329D1622678110E77 /* TranscriptionView.swift */; };
 		959A989D66149597097E95B5 /* SystemInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E2784A1B00CDCAF415C4B4 /* SystemInfo.swift */; };
+		95F32FA0C7898503763CAAED /* CoreAIEncoderRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84556F0DDF0AFEE679C1A20 /* CoreAIEncoderRunner.swift */; };
 		9F2E39734E77D1840533E8DA /* WatchMicrophoneCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE21E9842C04B3B9FD000D1C /* WatchMicrophoneCapture.swift */; };
 		9F45B837397649ACBF52F2C0 /* MLMultiArray+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD190E6AD57FE3960373B2E9 /* MLMultiArray+Extensions.swift */; };
 		A87FE39DD733FB0C67BE1851 /* MLModelConfigurationUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F131F04D8A4F8DD20776235 /* MLModelConfigurationUtils.swift */; };
@@ -72,10 +79,12 @@
 		D4B6F87A8BFD334E1DDA3017 /* NemotronMultilingualTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E0CEEC8C10F55B33F85ED7A /* NemotronMultilingualTokenizer.swift */; };
 		D585AD2057712A56FDF1E6BC /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8B123BD20FB706CB782ED43 /* WaveformView.swift */; };
 		D5F3C5EB0DC5970A9C7D4E44 /* CoreAIStreamingTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A23627F051A15E10F56F52 /* CoreAIStreamingTranscriber.swift */; };
+		D921FD1CA19B4E5F650CA35E /* Float16Compat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7C24EFA0F7C59852D71506 /* Float16Compat.swift */; };
 		E416D6E60528D1291845190B /* SentimentAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCC210ECE3F796E4A5CB5EF /* SentimentAnalysis.swift */; };
 		E449B9F8183B8C8CCDAC61CF /* SystemInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E2784A1B00CDCAF415C4B4 /* SystemInfo.swift */; };
 		E5A5DB4070DFBE1A529E7649 /* MLMultiArray+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD190E6AD57FE3960373B2E9 /* MLMultiArray+Extensions.swift */; };
 		E619D3E27EBF60EB6E0E93D0 /* NemotronWatchModels in Resources */ = {isa = PBXBuildFile; fileRef = 500C30D0AD32812EC6D3643F /* NemotronWatchModels */; };
+		E9E2DCF031297B2F022B1C05 /* NemotronCoreMLTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24EFFDEF30584EE8C4E7762C /* NemotronCoreMLTranscriber.swift */; };
 		EC41093BF470D8F563AEC1C7 /* TranscriptionActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23F4B4D83B664C7E5052130 /* TranscriptionActivityAttributes.swift */; };
 		EDCE39C95ACF661351DB9277 /* SentimentHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 845249B1EA3A27A503BE9620 /* SentimentHighlighter.swift */; };
 		F5BCBFB358A9DA556B4F99C7 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC075996410473109CE2B985 /* AppLogger.swift */; };
@@ -115,6 +124,8 @@
 		11FD915C60D61F0C899B4CE0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		18308951C43873FC0DB8C86F /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
 		1B4CB1EDF6B0E240235D3922 /* NemotronWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NemotronWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B7C24EFA0F7C59852D71506 /* Float16Compat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Float16Compat.swift; sourceTree = "<group>"; };
+		24EFFDEF30584EE8C4E7762C /* NemotronCoreMLTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NemotronCoreMLTranscriber.swift; sourceTree = "<group>"; };
 		25DA0E4E0E8B0F922B0A6A04 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		2E0CEEC8C10F55B33F85ED7A /* NemotronMultilingualTokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NemotronMultilingualTokenizer.swift; sourceTree = "<group>"; };
 		2E15120A61B3F04916CC30EC /* StopRecordingIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopRecordingIntent.swift; sourceTree = "<group>"; };
@@ -123,6 +134,7 @@
 		2F131F04D8A4F8DD20776235 /* MLModelConfigurationUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLModelConfigurationUtils.swift; sourceTree = "<group>"; };
 		359E6C049E761514ADBFFFE3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3F635C1A6B60E74CBE3BFD68 /* StreamingAsrUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingAsrUtils.swift; sourceTree = "<group>"; };
+		3FFF0A96CED80080AA4AF797 /* WatchBench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBench.swift; sourceTree = "<group>"; };
 		42708857E6F6694ACA828A1F /* WatchCoreAIProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCoreAIProbe.swift; sourceTree = "<group>"; };
 		493C02809E32FBC36EFA8CA8 /* StreamingNemotronMultilingualAsrManager+Shared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamingNemotronMultilingualAsrManager+Shared.swift"; sourceTree = "<group>"; };
 		500C30D0AD32812EC6D3643F /* NemotronWatchModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = NemotronWatchModels; sourceTree = SOURCE_ROOT; };
@@ -133,6 +145,7 @@
 		5BF22C31E18F20A4451EEBF8 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5C26CE0DA904BE7B0763A9B8 /* NativeRnntInner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRnntInner.swift; sourceTree = "<group>"; };
 		766B7BF48608484A74435765 /* NemotronSentimentTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NemotronSentimentTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		792C0A16D1053E8F595B839C /* NemotronWatchBench */ = {isa = PBXFileReference; lastKnownFileType = folder; path = NemotronWatchBench; sourceTree = SOURCE_ROOT; };
 		7977FAECCE85EA7CE7A53F00 /* SentimentAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentimentAnalyzerTests.swift; sourceTree = "<group>"; };
 		7ADD53A9F1768CB97C5DB72F /* Models */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Models; path = Resources/Models; sourceTree = SOURCE_ROOT; };
 		8343B1F0E2A318388F9BFC08 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
@@ -141,8 +154,11 @@
 		88A3655132F7AC6FE3818F19 /* NemotronASRApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NemotronASRApp.swift; sourceTree = "<group>"; };
 		891B93C532B38871848F9FD1 /* AsrTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsrTypes.swift; sourceTree = "<group>"; };
 		8F0FF451F4DC7E72ACA8004C /* ModelDownloadOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDownloadOverlay.swift; sourceTree = "<group>"; };
+		8F7D00D469E3F604C7D4C5E0 /* NemotronModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NemotronModelDownloader.swift; sourceTree = "<group>"; };
+		8F99F7E3411128335BD0A2DB /* BenchmarkRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkRunner.swift; sourceTree = "<group>"; };
 		92B8F4772E384ECEC3F8E98F /* NemotronWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NemotronWatch.entitlements; sourceTree = "<group>"; };
 		99C98B5124941A02C08DA83C /* Chips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chips.swift; sourceTree = "<group>"; };
+		9B2C6D8DC683E1111218522F /* NemotronWatchCoreAIProbe */ = {isa = PBXFileReference; lastKnownFileType = folder; path = NemotronWatchCoreAIProbe; sourceTree = SOURCE_ROOT; };
 		B0FD55F13B62B09AE100244A /* MicrophoneCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrophoneCapture.swift; sourceTree = "<group>"; };
 		B23F4B4D83B664C7E5052130 /* TranscriptionActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionActivityAttributes.swift; sourceTree = "<group>"; };
 		B5A23627F051A15E10F56F52 /* CoreAIStreamingTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreAIStreamingTranscriber.swift; sourceTree = "<group>"; };
@@ -182,6 +198,16 @@
 				5BF22C31E18F20A4451EEBF8 /* Theme.swift */,
 			);
 			path = Theme;
+			sourceTree = "<group>";
+		};
+		23836E3CCC463ACBD0532B15 /* CoreML */ = {
+			isa = PBXGroup;
+			children = (
+				1B7C24EFA0F7C59852D71506 /* Float16Compat.swift */,
+				24EFFDEF30584EE8C4E7762C /* NemotronCoreMLTranscriber.swift */,
+				8F7D00D469E3F604C7D4C5E0 /* NemotronModelDownloader.swift */,
+			);
+			path = CoreML;
 			sourceTree = "<group>";
 		};
 		3BD016C6E6BE1DF0A9CCCE84 /* NemotronWatch */ = {
@@ -276,6 +302,7 @@
 				E311257FD444CA6BCCE26028 /* App */,
 				CC58C783EC07FE7E78459F70 /* Audio */,
 				DD4180CC9B407B701CCD415A /* CoreAI */,
+				23836E3CCC463ACBD0532B15 /* CoreML */,
 				E039FAB83EB13D69AFD3D4A0 /* Engine */,
 				AA6E812F66C25987655EC36D /* LiveActivity */,
 				64FF252A52D89363AE5C411D /* Models */,
@@ -347,6 +374,7 @@
 		E039FAB83EB13D69AFD3D4A0 /* Engine */ = {
 			isa = PBXGroup;
 			children = (
+				8F99F7E3411128335BD0A2DB /* BenchmarkRunner.swift */,
 				BC96C3F2EC623818D4E33191 /* TranscriptionEngine.swift */,
 			);
 			path = Engine;
@@ -365,6 +393,7 @@
 			children = (
 				5A37BDD974860A085C29A99A /* NemotronWatchApp.swift */,
 				D5BBE4329ADFDEA7A9D2DB17 /* WatchASRManager.swift */,
+				3FFF0A96CED80080AA4AF797 /* WatchBench.swift */,
 				8343B1F0E2A318388F9BFC08 /* WatchContentView.swift */,
 				42708857E6F6694ACA828A1F /* WatchCoreAIProbe.swift */,
 				EE21E9842C04B3B9FD000D1C /* WatchMicrophoneCapture.swift */,
@@ -375,6 +404,8 @@
 		FB7260F0FBA711A9D6C47776 = {
 			isa = PBXGroup;
 			children = (
+				792C0A16D1053E8F595B839C /* NemotronWatchBench */,
+				9B2C6D8DC683E1111218522F /* NemotronWatchCoreAIProbe */,
 				500C30D0AD32812EC6D3643F /* NemotronWatchModels */,
 				E99F12D13F3F7D5363CD193B /* NemotronWatchSentiment */,
 				3BD016C6E6BE1DF0A9CCCE84 /* NemotronWatch */,
@@ -514,6 +545,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3F007E5AF242E6A10AF0BADC /* NemotronWatchBench in Resources */,
+				384DF6872519D12313512162 /* NemotronWatchCoreAIProbe in Resources */,
 				E619D3E27EBF60EB6E0E93D0 /* NemotronWatchModels in Resources */,
 				CFC6B439388481C0581CA0A0 /* NemotronWatchSentiment in Resources */,
 			);
@@ -540,11 +573,13 @@
 				CD026C7940A222F867E65844 /* AppSettings.swift in Sources */,
 				37064A5D2B471726B9C93856 /* AsrTypes.swift in Sources */,
 				0133F1B7494003DBBC31465E /* AudioConverter.swift in Sources */,
+				38096B96975C3E33577AEA75 /* BenchmarkRunner.swift in Sources */,
 				C0327336B4C73B73CA28E34A /* Chips.swift in Sources */,
 				F9134E68B2752AD51CBDEC96 /* CoreAIEncoderRunner.swift in Sources */,
 				2E955CAC88172689BC4935AF /* CoreAIResidencyProbe.swift in Sources */,
 				D5F3C5EB0DC5970A9C7D4E44 /* CoreAIStreamingTranscriber.swift in Sources */,
 				B386CEBE9119E78005091D47 /* EncoderCacheManager.swift in Sources */,
+				D921FD1CA19B4E5F650CA35E /* Float16Compat.swift in Sources */,
 				AB1DA0975A696CADDEBE7D6E /* LiveActivityController.swift in Sources */,
 				5C958AB7B81A9E654E28A25C /* MLModelConfigurationUtils.swift in Sources */,
 				E5A5DB4070DFBE1A529E7649 /* MLMultiArray+Extensions.swift in Sources */,
@@ -554,6 +589,8 @@
 				44A1051023EE36803F100D2D /* ModelNames.swift in Sources */,
 				5AEA4CA925FBE94DE3F94E06 /* NativeRnntInner.swift in Sources */,
 				1897FF6AD4DCC8EA55AF1B9A /* NemotronASRApp.swift in Sources */,
+				E9E2DCF031297B2F022B1C05 /* NemotronCoreMLTranscriber.swift in Sources */,
+				0CCA7E8395A874D8F6FCB9A1 /* NemotronModelDownloader.swift in Sources */,
 				CEFD3A81E311E8CF2C13E081 /* NemotronMultilingualStreamingConfig.swift in Sources */,
 				D4B6F87A8BFD334E1DDA3017 /* NemotronMultilingualTokenizer.swift in Sources */,
 				ABE62FBBAC3336AC23386AB6 /* RootView.swift in Sources */,
@@ -583,9 +620,11 @@
 				66CC4E262B7F631A15A348F9 /* AppLogger.swift in Sources */,
 				4022BC34A697F83CAAAA1870 /* AsrTypes.swift in Sources */,
 				2D41501ABF2EC830C1A5BAF7 /* AudioConverter.swift in Sources */,
+				95F32FA0C7898503763CAAED /* CoreAIEncoderRunner.swift in Sources */,
 				ADAD72DA94280BBE4D67C3C9 /* EncoderCacheManager.swift in Sources */,
 				A87FE39DD733FB0C67BE1851 /* MLModelConfigurationUtils.swift in Sources */,
 				9F45B837397649ACBF52F2C0 /* MLMultiArray+Extensions.swift in Sources */,
+				0140947492F94733FD5F43C0 /* MelFrontend.swift in Sources */,
 				8A00632915FE18370D3F555E /* ModelNames.swift in Sources */,
 				71A79440D1640CA6F10E58CE /* NativeRnntInner.swift in Sources */,
 				20477F38404379A33FA1ADF9 /* NemotronMultilingualStreamingConfig.swift in Sources */,
@@ -600,6 +639,7 @@
 				959A989D66149597097E95B5 /* SystemInfo.swift in Sources */,
 				1BCA18E9AE8ADD2D32EA38CA /* Tokenizer.swift in Sources */,
 				549AEAE24C7729C974940442 /* WatchASRManager.swift in Sources */,
+				581427732BA932A66B2C6F1B /* WatchBench.swift in Sources */,
 				F8A6DDC889957A293C599EF5 /* WatchContentView.swift in Sources */,
 				CA6E4BA005C8AAC1EBD08904 /* WatchCoreAIProbe.swift in Sources */,
 				5DB08A2C9462E9025DC476D2 /* WatchCoreMLSentimentScorer.swift in Sources */,

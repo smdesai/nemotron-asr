@@ -18,6 +18,8 @@ struct NemotronASRApp: App {
                 .environmentObject(engine)
                 .preferredColorScheme(.dark)
                 .tint(Theme.aurora2)
+                // No-op unless launched with NEMOTRON_BENCH (see BenchmarkRunner).
+                .task { await BenchmarkRunner.runIfRequested(engine: engine, settings: settings) }
         }
     }
 }

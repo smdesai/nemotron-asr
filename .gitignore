@@ -15,3 +15,7 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+NemotronWatchCoreAIProbe/*
+!NemotronWatchCoreAIProbe/README.md
+NemotronWatchBench/*
+!NemotronWatchBench/README.md
