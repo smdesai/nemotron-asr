@@ -5,7 +5,6 @@ struct TranscriptionView: View {
     @EnvironmentObject var engine: TranscriptionEngine
     @EnvironmentObject var settings: AppSettings
     @Binding var showSettings: Bool
-    @StateObject private var sentiment = SentimentHighlighter()
 
     enum InputMode: String, CaseIterable, Identifiable {
         case microphone, file
@@ -45,9 +44,6 @@ struct TranscriptionView: View {
             // Kick off model preparation on first appearance so the first
             // transcription is instant.
             await engine.prepareModelIfNeeded()
-        }
-        .task(id: sentimentRequest) {
-            await sentiment.update(sentimentRequest)
         }
     }
 
@@ -163,15 +159,6 @@ struct TranscriptionView: View {
                 if engine.isStreaming {
                     LiveBadge()
                 }
-                if let presentation = sentimentSummaryPresentation {
-                    Label(presentation.label, systemImage: presentation.systemImage)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(presentation.color)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(presentation.color.opacity(0.12), in: Capsule())
-                        .accessibilityLabel("Overall sentiment: \(presentation.label)")
-                }
                 Spacer()
                 if !engine.transcript.isEmpty {
                     Button {
@@ -191,11 +178,11 @@ struct TranscriptionView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(sentimentTranscript)
+                    Text(transcriptText)
                         .font(.system(.body, design: .rounded))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .accessibilityLabel(sentimentAccessibilityLabel)
+                        .accessibilityLabel(displayTranscript)
                         .id("transcriptEnd")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -228,61 +215,14 @@ struct TranscriptionView: View {
         return engine.transcript
     }
 
-    private var sentimentInput: SentimentInput {
-        SentimentInput(
-            text: engine.transcript,
-            languageCode: settings.languageCode,
-            isFinal: !engine.isStreaming
-                && engine.phase != .listening
-                && engine.phase != .transcribingFile
-        )
-    }
-
-    private var sentimentRequest: SentimentInput? {
-        settings.sentimentAnalysisEnabled ? sentimentInput : nil
-    }
-
-    private var sentimentTranscript: AttributedString {
+    /// The transcript, or a dimmed placeholder before anything is transcribed.
+    private var transcriptText: AttributedString {
         guard !engine.transcript.isEmpty else {
             var placeholder = AttributedString(displayTranscript)
             placeholder.foregroundColor = Theme.secondaryText
             return placeholder
         }
-
-        guard settings.sentimentAnalysisEnabled else {
-            return AttributedString(engine.transcript)
-        }
-
-        return sentiment.document.attributedString(
-            fallback: engine.transcript,
-            palette: sentimentPalette
-        )
-    }
-
-    private var sentimentPalette: SentimentPalette {
-        SentimentPalette(
-            negative: Color(red: 1, green: 0.48, blue: 0.36),
-            neutral: .white,
-            positive: Theme.aurora2,
-            mixed: Theme.aurora1,
-            unavailable: Theme.secondaryText,
-            provisional: .white
-        )
-    }
-
-    private var sentimentSummaryPresentation: SentimentPresentation? {
-        guard settings.sentimentAnalysisEnabled,
-            !engine.transcript.isEmpty,
-            sentiment.analyzedInput == sentimentInput
-        else { return nil }
-        return sentiment.document.summary.presentation(palette: sentimentPalette)
-    }
-
-    private var sentimentAccessibilityLabel: String {
-        guard settings.sentimentAnalysisEnabled, !engine.transcript.isEmpty else {
-            return displayTranscript
-        }
-        return sentiment.document.accessibilityLabel(fallback: engine.transcript)
+        return AttributedString(engine.transcript)
     }
 
     // MARK: Microphone controls

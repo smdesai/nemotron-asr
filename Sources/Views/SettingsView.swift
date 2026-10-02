@@ -15,7 +15,6 @@ struct SettingsView: View {
                     VStack(spacing: 18) {
                         backendCard
                         liveActivityCard
-                        sentimentCard
                         languageCard
                         chunkSizeCard
                         fileModeCard
@@ -126,29 +125,6 @@ struct SettingsView: View {
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
         }
-    }
-
-    // MARK: Sentiment analysis
-
-    private var sentimentCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            cardHeader(
-                "Sentiment Analysis",
-                systemImage: "face.smiling",
-                subtitle: "Color the transcript using on-device sentiment analysis."
-            )
-            Toggle("Highlight sentiment", isOn: sentimentAnalysisBinding)
-                .font(.subheadline.weight(.semibold))
-                .tint(Theme.aurora2)
-        }
-        .glassCard()
-    }
-
-    private var sentimentAnalysisBinding: Binding<Bool> {
-        Binding(
-            get: { settings.sentimentAnalysisEnabled },
-            set: { settings.sentimentAnalysisEnabled = $0 }
-        )
     }
 
     // MARK: Language

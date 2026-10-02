@@ -28,7 +28,6 @@ final class WatchASRManager: ObservableObject {
     /// Running (streamed) transcript shown in the ScrollView.
     @Published var transcript: String = ""
     /// Language tag emitted by the ASR decoder (for example, "en-US").
-    /// Sentiment analysis uses this instead of re-detecting short phrases.
     @Published private(set) var detectedLanguageCode: String?
     /// Status line for the UI.
     @Published private(set) var status: String = "Loading models…"

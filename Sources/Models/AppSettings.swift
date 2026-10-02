@@ -97,7 +97,6 @@ final class AppSettings: ObservableObject {
     @AppStorage("fileMode") private var fileModeRaw: String = FileTranscriptionMode.streamed
         .rawValue
     @AppStorage("backend") private var backendRaw: String = InferenceBackend.default.rawValue
-    @AppStorage("sentimentAnalysisEnabled") private var sentimentAnalysisEnabledStorage = true
 
     var backend: InferenceBackend {
         get { InferenceBackend(rawValue: backendRaw) ?? .default }
@@ -133,14 +132,6 @@ final class AppSettings: ObservableObject {
         get { FileTranscriptionMode(rawValue: fileModeRaw) ?? .streamed }
         set {
             fileModeRaw = newValue.rawValue
-            objectWillChange.send()
-        }
-    }
-
-    var sentimentAnalysisEnabled: Bool {
-        get { sentimentAnalysisEnabledStorage }
-        set {
-            sentimentAnalysisEnabledStorage = newValue
             objectWillChange.send()
         }
     }
