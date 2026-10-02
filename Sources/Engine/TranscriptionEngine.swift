@@ -284,8 +284,7 @@ final class TranscriptionEngine: ObservableObject {
             .appendingPathComponent(ship, isDirectory: true)
             .appendingPathComponent(tier, isDirectory: true)
             .appendingPathComponent("coreai", isDirectory: true)
-        let shard0 = CoreAIAssets.encoderShardURL(0, in: dir)
-        guard FileManager.default.fileExists(atPath: shard0.path) else {
+        guard CoreAIAssets.hasEncoder(in: dir) else {
             throw EngineError.coreAINotBundled(ship: ship, tier: tier)
         }
         return dir
@@ -335,12 +334,19 @@ final class TranscriptionEngine: ObservableObject {
             prepFraction = 0.2
 
             // 2. Load the four int8 encoder shards + decoder/joint.
-            let runner = CoreAIEncoderRunner(coreaiDirectory: dir)
+            let tierKey = variantKey(code: code, chunkMs: chunkMs)
+            let policy = CoreAIComputePolicy.decide(tier: tierKey, chunkMs: chunkMs)
+            print("[CoreAI] compute policy for \(tierKey): \(policy.reason)")
+            let runner = CoreAIEncoderRunner(
+                coreaiDirectory: dir, cpuOnly: policy.cpuOnly, aneGuardTier: tierKey)
             try await runner.load()
             try await runner.loadDecoderJoint(coreaiDirectory: dir)
             prepFraction = 0.5
             let fnNames = runner.shardFunctionNames
-            print("[CoreAI] loaded \(fnNames.count) encoder shards + decoder/joint")
+            print(
+                runner.isMonolithic
+                    ? "[CoreAI] loaded monolithic int8 encoder + decoder/joint"
+                    : "[CoreAI] loaded \(fnNames.count) encoder shards + decoder/joint")
 
             // ANE residency probe (console + Settings card).
             let residency = CoreAIResidencyProbe.report(in: dir)

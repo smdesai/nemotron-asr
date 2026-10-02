@@ -11,6 +11,23 @@ enum CoreAIAssets {
         return dir.appendingPathComponent("encoder_shard_\(index).aimodel")
     }
 
+    /// Monolithic int8 encoder (`quantize_encoder_coreai.py`: one graph, mel ->
+    /// encoded, full [1,24,...] caches). When present it is used instead of the
+    /// shards, unless launched with COREAI_ENCODER=shards.
+    static func monolithicEncoderURL(in dir: URL) -> URL? {
+        if ProcessInfo.processInfo.environment["COREAI_ENCODER"]?.lowercased() == "shards" {
+            return nil
+        }
+        let url = dir.appendingPathComponent("encoder_int8.aimodel")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// True when `dir` holds a usable encoder (monolithic or shard 0).
+    static func hasEncoder(in dir: URL) -> Bool {
+        monolithicEncoderURL(in: dir) != nil
+            || FileManager.default.fileExists(atPath: encoderShardURL(0, in: dir).path)
+    }
+
     /// Sideload directory for AOT-compiled assets (`coreai-build compile`),
     /// pushed without rebuilding the app:
     ///   xcrun devicectl device copy to --device <id> \
@@ -36,6 +53,55 @@ enum CoreAIAssets {
         }
         candidates.append(source.deletingLastPathComponent().appendingPathComponent(name))
         return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
+/// Decides per tier whether Core AI runs CPU-only instead of ANE-preferred, and
+/// remembers Neural Engine run-time failures across launches.
+///
+/// The ANE failure seen on h18p (iOS 27.2) for the 4480 ms shards is an assertion
+/// inside MPSGraph (`ANERegion.mm: ANE inference operation failed ... Code=-19`)
+/// that aborts the process — Swift cannot catch it. So the runner sets a
+/// per-tier "probe" flag before the first ANE inference and clears it once that
+/// chunk succeeds; a launch that finds the flag still set knows the previous run
+/// died there, records the tier as ANE-failed, and uses CPU from then on.
+/// Reinstalling the app (or COREAI_FORCE_ANE=YES) resets/overrides this.
+enum CoreAIComputePolicy {
+    private static func probeKey(_ tier: String) -> String { "coreai.aneProbe.\(tier)" }
+    private static func failedKey(_ tier: String) -> String { "coreai.aneFailed.\(tier)" }
+
+    /// Tiers whose ANE plan is known to fail at run time on current devices.
+    /// 4480 ms: Code -19 on the first chunk (h18p, iOS 27.2); CPU-only measured
+    /// ~20x real time there, the fastest Core AI tier.
+    static let knownANEFailingTiers: Set<Int> = [4480]
+
+    /// (cpuOnly, reason) for a tier. Also converts a stale probe flag (previous
+    /// launch died during the first ANE inference) into a sticky ANE failure.
+    static func decide(tier: String, chunkMs: Int) -> (cpuOnly: Bool, reason: String) {
+        let d = UserDefaults.standard
+        if d.bool(forKey: probeKey(tier)) {
+            d.set(true, forKey: failedKey(tier))
+            d.removeObject(forKey: probeKey(tier))
+        }
+        if ProcessInfo.processInfo.environment["COREAI_FORCE_ANE"]?.uppercased() == "YES" {
+            return (false, "ANE forced (COREAI_FORCE_ANE=YES)")
+        }
+        if d.bool(forKey: failedKey(tier)) {
+            return (true, "\(tier): previous launch crashed in the first ANE inference — CPU-only")
+        }
+        if knownANEFailingTiers.contains(chunkMs) {
+            return (true, "\(chunkMs) ms: ANE inference fails on this tier — CPU-only")
+        }
+        return (false, "ANE-preferred")
+    }
+
+    static func beginANEProbe(tier: String) {
+        UserDefaults.standard.set(true, forKey: probeKey(tier))
+        UserDefaults.standard.synchronize()  // must hit disk before a possible abort
+    }
+
+    static func endANEProbe(tier: String) {
+        UserDefaults.standard.removeObject(forKey: probeKey(tier))
     }
 }
 
@@ -110,9 +176,27 @@ final class CoreAIEncoderRunner {
     private var shardCacheTimeND = [NDArray?](repeating: nil, count: 4)
     private var shardCacheLen = [Int32](repeating: 0, count: 4)
 
-    init(coreaiDirectory dir: URL) {
-        self.shardURLs = (0 ..< 4).map { CoreAIAssets.encoderShardURL($0, in: dir) }
+    /// Load every model CPU-only (CoreAIComputePolicy decided the ANE can't run
+    /// this tier). When false, models load ANE-preferred as before.
+    let cpuOnly: Bool
+    /// Tier key for the crash-safe first-inference ANE probe; nil disables it.
+    private let aneGuardTier: String?
+    private var aneVerified = false
+
+    init(coreaiDirectory dir: URL, cpuOnly: Bool = false, aneGuardTier: String? = nil) {
+        self.cpuOnly = cpuOnly
+        self.aneGuardTier = cpuOnly ? nil : aneGuardTier
+        // A monolithic encoder is run as a one-model "chain": same streaming-cache
+        // threading, only the length I/O names differ (mel_length/encoded_length).
+        if let mono = CoreAIAssets.monolithicEncoderURL(in: dir) {
+            self.shardURLs = [mono]
+        } else {
+            self.shardURLs = (0 ..< 4).map { CoreAIAssets.encoderShardURL($0, in: dir) }
+        }
     }
+
+    /// True when running the single monolithic encoder instead of 4 shards.
+    var isMonolithic: Bool { shardURLs.count == 1 }
 
     /// Release Core AI resources in a crash-safe order: the cached
     /// `InferenceFunction`s (and the streaming-cache NDArrays) BEFORE the
@@ -166,7 +250,11 @@ final class CoreAIEncoderRunner {
     /// the watch target's entitlements).
     static let appGroupCacheId = "group.com.sdesai.NemotronASR"
 
-    static func loadModel(at url: URL) async throws -> AIModel {
+    static func loadModel(at url: URL, cpuOnly: Bool = false) async throws -> AIModel {
+        if cpuOnly {
+            print("[CoreAI] loading \(url.lastPathComponent) .cpuOnly (compute policy)")
+            return try await loadCPUOnly(at: url)
+        }
         // Ahead-of-time GPU-compiled variant (coreai-build compile
         // --preferred-compute gpu): load with matching GPU specialization
         // options per Apple's AOT guidance ("specify options that match the
@@ -196,6 +284,41 @@ final class CoreAIEncoderRunner {
             && (UserDefaults.standard.object(forKey: "coreai.gpuFree") == nil
                 || UserDefaults.standard.bool(forKey: "coreai.gpuFree"))
         if gpuFree {
+            // Ahead-of-time ANE asset (`coreai-build compile --platform iOS
+            // --architecture <arch> --preferred-compute neural-engine`), next to
+            // the source or sideloaded. Needed for the monolithic int8 encoder,
+            // whose on-device specialization runs out of memory ("LLVM ERROR: out
+            // of memory"). COREAI_AOT=NO skips it.
+            if env["COREAI_AOT"] != "NO", let compiled = CoreAIAssets.compiledVariant(of: url) {
+                do {
+                    let model = try await AIModel(
+                        contentsOf: compiled,
+                        options: SpecializationOptions(preferredComputeUnitKind: .neuralEngine))
+                    print("[CoreAI] loaded AOT \(compiled.lastPathComponent) GPU-free (ANE-preferred)")
+                    return model
+                } catch {
+                    print("[CoreAI] AOT \(compiled.lastPathComponent) ANE-preferred failed: \(error)")
+                }
+                do {
+                    let model = try await AIModel(contentsOf: compiled)
+                    print("[CoreAI] loaded AOT \(compiled.lastPathComponent) (default options)")
+                    return model
+                } catch {
+                    print(
+                        "[CoreAI] AOT \(compiled.lastPathComponent) default options failed: \(error) — falling back to source"
+                    )
+                }
+            }
+            // COREAI_LOAD=default: specialize the source with default options (the
+            // runtime picks compute units, GPU included) — A/B against ANE-preferred.
+            if env["COREAI_LOAD"]?.lowercased() == "default" {
+                let t = Date()
+                let model = try await AIModel(contentsOf: url)
+                print(
+                    "[CoreAI] loaded \(url.lastPathComponent) with DEFAULT options in \(String(format: "%.1f", Date().timeIntervalSince(t)))s"
+                )
+                return model
+            }
             do {
                 let model = try await AIModel(
                     contentsOf: url,
@@ -340,7 +463,7 @@ final class CoreAIEncoderRunner {
             guard FileManager.default.fileExists(atPath: url.path) else {
                 throw RunnerError.shardMissing(i, url)
             }
-            loaded.append(try await Self.loadModel(at: url))
+            loaded.append(try await Self.loadModel(at: url, cpuOnly: cpuOnly))
         }
         shards = loaded
 
@@ -380,6 +503,11 @@ final class CoreAIEncoderRunner {
     func encode(mel: [Float], frames T: Int, promptId: Int32) async throws -> (
         encoded: [Float], shape: [Int]
     ) {
+        // Crash-safe ANE probe around the FIRST encoder inference of this runner
+        // (see CoreAIComputePolicy): if the ANE aborts the process here, the next
+        // launch finds the flag and switches this tier to CPU.
+        let probing = aneGuardTier != nil && !aneVerified
+        if probing, let tier = aneGuardTier { CoreAIComputePolicy.beginANEProbe(tier: tier) }
         var data = mel
         // Hidden state threaded shard→shard as an NDArray. When its layout
         // matches the next shard's declared input it is passed straight
@@ -402,7 +530,8 @@ final class CoreAIEncoderRunner {
                 }
                 fn = fresh
             }
-            let outputName = idx == 3 ? "encoded" : "hidden_out"
+            let isLast = idx == shards.count - 1
+            let outputName = isLast ? "encoded" : "hidden_out"
 
             // A Core AI function requires EVERY declared input. Provide the data
             // input + threaded length/caches; the persistent cache buffers are
@@ -423,7 +552,7 @@ final class CoreAIEncoderRunner {
                         inputs[name] = try makeFloatNDArray(
                             fn, name: name, data: data, shape: shape)
                     }
-                case "length":
+                case "length", "mel_length":  // shards / monolithic encoder
                     inputs[name] = try makeInt32NDArray(fn, name: name, data: [length], shape: [1])
                 case "prompt_id":
                     inputs[name] = try makeInt32NDArray(
@@ -453,7 +582,7 @@ final class CoreAIEncoderRunner {
                 throw RunnerError.outputMissing(outputName)
             }
             shape = out.shape
-            if idx == 3 {
+            if isLast {
                 // Final shard: the decode loop needs [Float].
                 data = try ndArrayToFloats(out)
             } else {
@@ -461,7 +590,7 @@ final class CoreAIEncoderRunner {
             }
 
             // Thread length forward (shard 0's pre_encode downsamples 233→~29).
-            if let lenOut = outputs.remove("length_out")?.ndArray {
+            if let lenOut = (outputs.remove("length_out") ?? outputs.remove("encoded_length"))?.ndArray {
                 length = try ndArrayToInt32(lenOut).first ?? length
             }
             // Refill the persistent cache buffers from this run's outputs with
@@ -480,6 +609,10 @@ final class CoreAIEncoderRunner {
             if let lnOut = outputs.remove("cache_len_out")?.ndArray {
                 shardCacheLen[idx] = try ndArrayToInt32(lnOut).first ?? shardCacheLen[idx]
             }
+        }
+        if probing, let tier = aneGuardTier {
+            CoreAIComputePolicy.endANEProbe(tier: tier)
+            aneVerified = true
         }
         return (data, shape)
     }
@@ -500,7 +633,7 @@ final class CoreAIEncoderRunner {
     func loadDecoderJoint(coreaiDirectory dir: URL) async throws {
         let fusedURL = dir.appendingPathComponent("decoder_joint.aimodel")
         if FileManager.default.fileExists(atPath: fusedURL.path) {
-            let fm = try await Self.loadModel(at: fusedURL)
+            let fm = try await Self.loadModel(at: fusedURL, cpuOnly: cpuOnly)
             decoderJointModel = fm
             decoderJointFn = try fm.loadFunction(named: fm.functionNames.first ?? "main")
             print("[CoreAI] loaded fused decoder_joint.aimodel (one dispatch/token)")
@@ -514,8 +647,8 @@ final class CoreAIEncoderRunner {
         guard FileManager.default.fileExists(atPath: jntURL.path) else {
             throw RunnerError.shardMissing(-2, jntURL)
         }
-        let dm = try await Self.loadModel(at: decURL)
-        let jm = try await Self.loadModel(at: jntURL)
+        let dm = try await Self.loadModel(at: decURL, cpuOnly: cpuOnly)
+        let jm = try await Self.loadModel(at: jntURL, cpuOnly: cpuOnly)
         decoderModel = dm
         jointModel = jm
         decoderFn = try dm.loadFunction(named: dm.functionNames.first ?? "main")
