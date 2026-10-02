@@ -15,14 +15,6 @@ struct ASRLanguage: Identifiable, Hashable {
     let flag: String
 
     var id: String { code ?? "auto" }
-
-    /// Whether routing this language uses the vocab-pruned "latin" ship
-    /// (en/es/fr/it/pt/de) vs. the full "multilingual" ship.
-    var isLatinScript: Bool {
-        guard let code else { return false }
-        let c = code.lowercased()
-        return ["en", "es", "fr", "it", "pt", "de"].contains { c.hasPrefix($0) }
-    }
 }
 
 enum ASRLanguageCatalog {

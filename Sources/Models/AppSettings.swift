@@ -11,8 +11,6 @@ enum ChunkSize: Int, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
-    var seconds: Double { Double(rawValue) / 1000.0 }
-
     var label: String {
         switch self {
         case .ms560: return "0.56 s"
@@ -37,10 +35,11 @@ enum ChunkSize: Int, CaseIterable, Identifiable {
 
 /// Which on-device inference backend runs the model.
 ///
-/// - `coreml`: the shipping path via FluidAudio / CoreML `.mlmodelc` (iOS 18+).
-/// - `coreai`: the experimental Apple Core AI path via `.aimodel` bundles
-///   (iOS 27+). Encoder is the int8 sharded Core AI build; the mel front-end runs
-///   in Swift/vDSP (`MelFrontend`). See `coreai/` under each tier dir.
+/// - `coreml`: CoreML `.mlmodelc` — split encoder (pre-encode + 4 shards) with
+///   smart-speculative decode. See `coreml/` under each tier dir.
+/// - `coreai`: Apple Core AI `.aimodel` — 4 int8 encoder shards + fused
+///   decoder/joint; the mel front-end runs in Swift/vDSP (`MelFrontend`). See
+///   `coreai/` under each tier dir.
 enum InferenceBackend: String, CaseIterable, Identifiable {
     case coreml
     case coreai
@@ -56,8 +55,8 @@ enum InferenceBackend: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .coreml: return "Shipping path — FluidAudio on the Neural Engine."
-        case .coreai: return "Experimental — Apple Core AI (.aimodel), requires iOS 27."
+        case .coreml: return "CoreML — split encoder with speculative decoding."
+        case .coreai: return "Apple Core AI (.aimodel) — int8 encoder shards + fused decoder."
         }
     }
 

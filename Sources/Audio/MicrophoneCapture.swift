@@ -5,10 +5,10 @@ import Foundation
 /// delivers it **in order** via an `AsyncStream`. Also reports a smoothed
 /// input level for live waveform visualisation.
 ///
-/// Ordering matters for streaming ASR — the realtime audio tap runs on a
-/// high-priority audio thread, so we resample synchronously there (cheap,
-/// `AudioConverter` is `Sendable`) and yield into a stream whose consumer
-/// feeds the ASR actor one buffer at a time.
+/// Ordering matters for streaming ASR — the tap resamples each buffer
+/// synchronously on the audio thread (one persistent `AudioConverter`, which
+/// is `Sendable`) and yields into a stream whose consumer feeds the ASR one
+/// block at a time, so blocks can never be reordered.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: LocalizedError {
         case permissionDenied

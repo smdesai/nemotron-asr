@@ -1,16 +1,14 @@
 import AVFoundation
-import CoreML
 import Foundation
 import SwiftUI
 
-// The ASR core is vendored into this target (NemotronWatch/Vendored) — no
-// external FluidAudio package. The guard keeps the source usable either way.
-#if canImport(FluidAudio)
-import FluidAudio
-#endif
-
 /// Drives the Nemotron multilingual streaming ASR for both audio-file and
 /// microphone input, and publishes everything the UI needs to render.
+///
+/// Both backends sit behind `ASRSession`, so the file and mic flows are shared:
+///   - CoreML: split encoder (pre-encode + 4 shards) + smart-speculative decode.
+///   - Core AI: 4 int8 `.aimodel` encoder shards + fused `decoder_joint.aimodel`,
+///     with `CoreAIComputePolicy` choosing ANE-preferred or CPU-only per tier.
 @MainActor
 final class TranscriptionEngine: ObservableObject {
 
@@ -18,7 +16,7 @@ final class TranscriptionEngine: ObservableObject {
 
     enum Phase: Equatable {
         case idle  // nothing loaded yet
-        case preparing  // downloading / compiling / loading models
+        case preparing  // loading models
         case ready  // models loaded, awaiting input
         case transcribingFile  // processing an audio file
         case listening  // microphone is live
@@ -47,11 +45,11 @@ final class TranscriptionEngine: ObservableObject {
     /// Language the model auto-detected, if any (friendly name).
     @Published private(set) var detectedLanguage: String?
 
-    /// Model-prep progress (download + compile + load).
+    /// Model-preparation progress (load + specialize).
     @Published private(set) var prepFraction: Double = 0
     @Published private(set) var prepMessage: String = ""
 
-    /// Audio-file processing progress 0...1.
+    /// Audio-file processing progress 0...1 (published in ≥1% steps).
     @Published private(set) var fileProgress: Double = 0
 
     /// Smoothed mic input level 0...1 for the waveform.
@@ -63,8 +61,8 @@ final class TranscriptionEngine: ObservableObject {
     /// seconds + chunk count), for BenchmarkRunner. nil on the Core AI path.
     private(set) var lastStageTimes: String?
 
-    /// Core AI on-device residency report (compute types + dtype histogram per
-    /// shard). Populated by `prepareCoreAI`; surfaced in Settings for debugging.
+    /// Core AI encoder residency report (compute types + dtype histogram per
+    /// shard), surfaced in Settings for debugging. nil when unavailable.
     @Published private(set) var coreAIResidency: String?
 
     /// Live Activity start/end result, surfaced in Settings for on-device
@@ -75,7 +73,7 @@ final class TranscriptionEngine: ObservableObject {
 
     private let settings: AppSettings
 
-    /// Drives the lock-screen / Dynamic Island Live Activity during mic sessions.
+    /// Drives the lock-screen / Dynamic Island Live Activity during sessions.
     private let liveActivity = LiveActivityController()
 
     /// Friendly language label for the Live Activity: the detected language when
@@ -86,41 +84,21 @@ final class TranscriptionEngine: ObservableObject {
 
     // MARK: Model state
 
-    /// Cache of loaded shared model bundles, keyed by "<ship>/<chunkMs>".
-    private var sharedCache: [String: SharedNemotronMultilingualModels] = [:]
-    private var manager: StreamingNemotronMultilingualAsrManager?
-    /// The "<ship>/<chunkMs>" key currently loaded into `manager`.
-    private var loadedVariantKey: String?
-    /// The Core AI variant key (`ship/chunk#code`) currently loaded into
-    /// `coreAIRunner`. Repeated prepares for the same variant become a no-op so
-    /// the CPU-delegated decoder/joint functions aren't churned (and crashed).
-    private var coreAIPreparedKey: String?
-    /// Language code currently applied to the manager.
+    /// The prepared pipeline for the current backend + tier.
+    private var session: ASRSession?
+    /// "<backend>|<ship>/<chunkMs>" that `session` was prepared for.
+    private var sessionKey: String?
+    /// Language code currently applied to `session` (outer nil = not applied).
     private var appliedLanguageCode: String??
+    /// Loaded CoreML model bundles keyed by "<ship>/<chunkMs>". Holds at most the
+    /// current variant; emptied when the Core AI backend is active.
+    private var sharedCache: [String: SharedNemotronMultilingualModels] = [:]
 
     private var micCapture: MicrophoneCapture?
     private var micTask: Task<Void, Never>?
+    private var isStopping = false
 
-    /// Core AI (iOS 27+) encoder runner + mel front-end, held across prepares.
-    /// Typed `Any?` so the property exists on the iOS-27-min target without an
-    /// availability annotation on the stored declaration.
-    private var coreAIRunnerBox: Any?
-    private var coreAIMelBox: Any?
-    private var coreAITranscriberBox: Any?
-    @available(iOS 27.0, *)
-    private var coreAIRunner: CoreAIEncoderRunner? {
-        get { coreAIRunnerBox as? CoreAIEncoderRunner }
-        set { coreAIRunnerBox = newValue }
-    }
-    private var coreAIMel: MelFrontend? {
-        get { coreAIMelBox as? MelFrontend }
-        set { coreAIMelBox = newValue }
-    }
-    @available(iOS 27.0, *)
-    private var coreAITranscriber: CoreAIStreamingTranscriber? {
-        get { coreAITranscriberBox as? CoreAIStreamingTranscriber }
-        set { coreAITranscriberBox = newValue }
-    }
+    private var prepareInFlight: Task<Void, Never>?
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -142,122 +120,19 @@ final class TranscriptionEngine: ObservableObject {
 
     // MARK: - Variant resolution
 
-    /// Resolve the model ship directory ("latin" or "multilingual") for the
-    /// currently selected language.
-    private func shipDirectory(for code: String?) -> String {
-        StreamingNemotronMultilingualAsrManager.languageDirectory(for: code ?? "auto")
-    }
-
-    private func variantKey(code: String?, chunkMs: Int) -> String {
-        "\(shipDirectory(for: code))/\(chunkMs)"
-    }
-
-    // MARK: - Model preparation
-
-    /// Ensure a manager is loaded for the current language ship + chunk size,
-    /// loading the bundled CoreML variant if needed. Safe to call repeatedly —
-    /// reuses cached bundles and only reloads when the variant changes.
-    func prepareModelIfNeeded() async {
-        // Serialize: a second caller arriving mid-load (e.g. the view's .task and
-        // BenchmarkRunner at launch) used to start a full second load in parallel,
-        // doubling Core AI specialization memory (std::bad_alloc for the monolithic
-        // encoder). Wait for the in-flight preparation, then re-check (cheap when
-        // already ready for the current variant).
-        while let inFlight = prepareInFlight {
-            await inFlight.value
-            // Clear a FINISHED task ourselves: awaiting a completed Task returns
-            // without suspending, so if we only waited for its creator to clear
-            // it, this loop would spin on the main actor and starve the creator
-            // (livelock: models loaded, prepare never returns).
-            if prepareInFlight == inFlight { prepareInFlight = nil }
-        }
-        let task = Task { await self.prepareModelIfNeededSerialized() }
-        prepareInFlight = task
-        await task.value
-        if prepareInFlight == task { prepareInFlight = nil }
-    }
-
-    private var prepareInFlight: Task<Void, Never>?
-
-    private func prepareModelIfNeededSerialized() async {
-        let code = settings.languageCode
-        let chunkMs = settings.chunkSize.rawValue
-
-        // Core AI backend (iOS 27+): validate + run the staged .aimodel encoder.
-        // This is the experimental path; full streaming transcription via Core AI
-        // is wired in the runtime-integration step. For now it confirms the
-        // converted assets load and run on-device.
-        if settings.backend == .coreai {
-            await prepareCoreAI(code: code, chunkMs: chunkMs)
-            return
-        }
-
-        let key = variantKey(code: code, chunkMs: chunkMs)
-
-        // Already loaded for this variant — just (re)apply the language hint.
-        if loadedVariantKey == key, manager != nil {
-            await applyLanguageIfNeeded(code)
-            if case .preparing = phase {
-            } else if phase == .idle {
-                phase = .ready
-            }
-            return
-        }
-
-        phase = .preparing
-        prepFraction = 0
-        prepMessage = "Preparing model…"
-
-        do {
-            let shared = try await loadShared(code: code, chunkMs: chunkMs, key: key)
-            let mgr = manager ?? StreamingNemotronMultilingualAsrManager()
-            try await mgr.loadFromShared(shared)
-            self.manager = mgr
-            self.loadedVariantKey = key
-            self.appliedLanguageCode = nil
-            await applyLanguageIfNeeded(code)
-            phase = .ready
-            prepFraction = 1
-            prepMessage = "Ready"
-        } catch {
-            phase = .failed(friendly(error))
-        }
-    }
-
-    private func loadShared(code: String?, chunkMs: Int, key: String) async throws
-        -> SharedNemotronMultilingualModels
-    {
-        if let cached = sharedCache[key] {
-            prepMessage = "Loading model…"
-            prepFraction = 1
-            return cached
-        }
-
-        // The HuggingFace repo is gated, so the model variants are bundled into
-        // the app under `Models/<ship>/<tier>ms/` and loaded from the bundle —
-        // no runtime download. `.mlmodelc` is already compiled, so this is fast.
-        prepMessage = "Loading model…"
-        prepFraction = 0.15
-        let variantDir = try bundledVariantDirectory(code: code, chunkMs: chunkMs)
-        // CoreML model artifacts live in the `coreml/` subdirectory; the shared
-        // `metadata.json` / `tokenizer.json` stay at the tier root (variantDir).
-        let coremlDir = variantDir.appendingPathComponent("coreml", isDirectory: true)
-
-        prepFraction = 0.4
-        try await probeShardedEncoderLoadIfPresent(in: coremlDir)
-        let shared = try await StreamingNemotronMultilingualAsrManager.preloadShared(
-            from: coremlDir,
-            commonDirectory: variantDir
-        )
-        sharedCache[key] = shared
-        return shared
+    /// A resolved `<ship>/<tier>ms` model directory.
+    private struct ModelTier {
+        let ship: String
+        let chunkMs: Int
+        let directory: URL
+        var variant: String { "\(ship)/\(chunkMs)" }
     }
 
     /// Root of the `<ship>/<tier>ms/` model tree: the app bundle's `Models/`, or —
     /// for on-device A/B benchmarking without reinstalling — a tree copied into
     /// the app container and named by the `NEMOTRON_MODELS_ROOT` launch env var
     /// (path relative to the container, e.g. `Documents/Models`).
-    private static func modelsRoot() -> URL? {
+    private static let modelsRoot: URL? = {
         if let rel = ProcessInfo.processInfo.environment["NEMOTRON_MODELS_ROOT"], !rel.isEmpty {
             let url =
                 rel.hasPrefix("/")
@@ -267,240 +142,202 @@ final class TranscriptionEngine: ObservableObject {
             return url
         }
         return Bundle.main.resourceURL?.appendingPathComponent("Models")
+    }()
+
+    /// Resolve the tier directory for a language + chunk size. The language's
+    /// preferred ship ("latin" for en/es/fr/it/pt/de, else "multilingual") is
+    /// used when bundled; otherwise falls back to "multilingual". Each tier holds
+    /// `metadata.json` + `tokenizer.json` with `coreml/` and `coreai/` subdirs.
+    private static func tierDirectory(code: String?, chunkMs: Int) throws -> ModelTier {
+        let preferred = StreamingNemotronMultilingualAsrManager.languageDirectory(
+            for: code ?? "auto")
+        let tierName = "\(chunkMs)ms"
+        if let root = modelsRoot {
+            for ship in preferred == "multilingual" ? [preferred] : [preferred, "multilingual"] {
+                let dir = root.appendingPathComponent(ship, isDirectory: true)
+                    .appendingPathComponent(tierName, isDirectory: true)
+                if FileManager.default.fileExists(
+                    atPath: dir.appendingPathComponent("metadata.json").path)
+                {
+                    return ModelTier(ship: ship, chunkMs: chunkMs, directory: dir)
+                }
+            }
+        }
+        throw EngineError.modelNotBundled(ship: preferred, tier: tierName)
     }
 
-    /// Resolve the bundled directory for a given ship + chunk tier.
-    private func bundledVariantDirectory(code: String?, chunkMs: Int) throws -> URL {
-        let ship = shipDirectory(for: code)  // "latin" or "multilingual"
-        let tier = "\(chunkMs)ms"
-        guard let modelsRoot = Self.modelsRoot() else {
-            throw EngineError.modelNotBundled(ship: ship, tier: tier)
-        }
-        let variantDir =
-            modelsRoot
-            .appendingPathComponent(ship, isDirectory: true)
-            .appendingPathComponent(tier, isDirectory: true)
-        let metadata = variantDir.appendingPathComponent("metadata.json")
-        guard FileManager.default.fileExists(atPath: metadata.path) else {
-            throw EngineError.modelNotBundled(ship: ship, tier: tier)
-        }
-        return variantDir
+    private static func sessionKey(backend: InferenceBackend, tier: ModelTier) -> String {
+        "\(backend.rawValue)|\(tier.variant)"
     }
 
-    // MARK: - Core AI path (iOS 27+, experimental)
-
-    /// Resolve the bundled `coreai/` subdir for a tier (parallel to the CoreML
-    /// `.mlmodelc` set), holding the int8 sharded encoder + decoder/joint + the
-    /// mel front-end resources.
-    private func coreaiDirectory(code: String?, chunkMs: Int) throws -> URL {
-        let ship = shipDirectory(for: code)
-        let tier = "\(chunkMs)ms"
-        guard let modelsRoot = Self.modelsRoot() else {
-            throw EngineError.modelNotBundled(ship: ship, tier: tier)
-        }
-        let dir =
-            modelsRoot
-            .appendingPathComponent(ship, isDirectory: true)
-            .appendingPathComponent(tier, isDirectory: true)
-            .appendingPathComponent("coreai", isDirectory: true)
-        guard CoreAIAssets.hasEncoder(in: dir) else {
-            throw EngineError.coreAINotBundled(ship: ship, tier: tier)
-        }
-        return dir
+    /// Session key the current settings resolve to (nil if no tier is bundled).
+    private var desiredSessionKey: String? {
+        (try? Self.tierDirectory(
+            code: settings.languageCode, chunkMs: settings.chunkSize.rawValue))
+            .map { Self.sessionKey(backend: settings.backend, tier: $0) }
     }
 
-    /// Load + run the staged Core AI encoder shards on real mel features.
-    /// Reports a verified status; does not (yet) produce a full transcript — that
-    /// is the streaming-runtime integration step.
-    private func prepareCoreAI(code: String?, chunkMs: Int) async {
-        // Idempotent: if a runner is already prepared for this exact variant,
-        // reuse it. Rebuilding the runner deallocates the CPU(BNNS)-delegated
-        // decoder/joint InferenceFunctions, whose teardown over-releases on the
-        // 27.0 beta — so avoid redundant reloads (and re-entrant double-prepares).
-        let preparedKey = "\(variantKey(code: code, chunkMs: chunkMs))#\(code ?? "auto")"
-        if #available(iOS 27.0, *), coreAIRunner != nil,
-            coreAIPreparedKey == preparedKey, phase == .ready
-        {
+    // MARK: - Model preparation
+
+    /// Ensure a session is loaded for the current backend + tier. Safe to call
+    /// repeatedly — reuses the loaded session and only reloads when the
+    /// backend or tier changes (a language change just re-applies the hint).
+    func prepareModelIfNeeded() async {
+        // Serialize: a second caller arriving mid-load (e.g. the view's .task and
+        // BenchmarkRunner at launch) would otherwise start a second full load in
+        // parallel. Wait for the in-flight preparation, then re-check.
+        while let inFlight = prepareInFlight {
+            await inFlight.value
+            // Clear a FINISHED task ourselves: awaiting a completed Task returns
+            // without suspending, so waiting for its creator to clear it would
+            // spin this loop on the main actor and starve the creator.
+            if prepareInFlight == inFlight { prepareInFlight = nil }
+        }
+        let task = Task { await self.prepareModelIfNeededSerialized() }
+        prepareInFlight = task
+        await task.value
+        if prepareInFlight == task { prepareInFlight = nil }
+    }
+
+    private func prepareModelIfNeededSerialized() async {
+        let backend = settings.backend
+        let code = settings.languageCode
+        let tier: ModelTier
+        do {
+            tier = try Self.tierDirectory(code: code, chunkMs: settings.chunkSize.rawValue)
+        } catch {
+            phase = .failed(friendly(error))
+            return
+        }
+        let key = Self.sessionKey(backend: backend, tier: tier)
+
+        // Already loaded for this backend + tier — just (re)apply the language.
+        if key == sessionKey, let session {
+            await applyLanguageIfNeeded(code, to: session)
+            if phase == .idle { phase = .ready }
             return
         }
 
         phase = .preparing
         prepFraction = 0
-        prepMessage = "Core AI: loading .aimodel shards…"
+        prepMessage = "Preparing model…"
 
-        guard #available(iOS 27.0, *) else {
-            phase = .failed("Core AI requires iOS 27 or later.")
-            return
+        // Release the previous pipeline before loading the next: lowers peak
+        // memory and frees the inactive backend's models on a backend switch.
+        releaseSession()
+        if backend == .coreml {
+            sharedCache = sharedCache.filter { $0.key == tier.variant }
+        } else {
+            sharedCache.removeAll()
         }
 
-        // Tear down any previous runner in a crash-safe order (functions before
-        // models) BEFORE building the next one. Drop the transcriber first — it
-        // strongly retains the runner.
-        coreAITranscriber = nil
-        coreAIRunner?.tearDown()
-        coreAIRunner = nil
-        coreAIMel = nil
-        coreAIPreparedKey = nil
-
         do {
-            let dir = try coreaiDirectory(code: code, chunkMs: chunkMs)
-            // Shared metadata.json / tokenizer.json live at the tier root (the
-            // parent of coreai/); the .aimodel + mel resources stay in coreai/.
-            let commonDir = dir.deletingLastPathComponent()
+            let newSession: ASRSession
+            switch backend {
+            case .coreml: newSession = try await makeCoreMLSession(tier: tier)
+            case .coreai: newSession = try await makeCoreAISession(tier: tier)
+            }
+            session = newSession
+            sessionKey = key
+            await applyLanguageIfNeeded(code, to: newSession)
+            phase = .ready
+            prepFraction = 1
+        } catch {
+            phase = .failed(backend == .coreai ? "Core AI: \(friendly(error))" : friendly(error))
+        }
+    }
 
-            // 1. Mel front-end (Swift/vDSP) — validated at ~130 dB vs NeMo.
-            let mel = try MelFrontend(resourceDirectory: dir)
-            prepFraction = 0.2
+    private func makeCoreMLSession(tier: ModelTier) async throws -> ASRSession {
+        prepMessage = "Loading model…"
+        let shared: SharedNemotronMultilingualModels
+        if let cached = sharedCache[tier.variant] {
+            shared = cached
+        } else {
+            prepFraction = 0.15
+            // CoreML artifacts live in `coreml/`; metadata.json / tokenizer.json
+            // stay at the tier root.
+            shared = try await StreamingNemotronMultilingualAsrManager.preloadShared(
+                from: tier.directory.appendingPathComponent("coreml", isDirectory: true),
+                commonDirectory: tier.directory
+            )
+            sharedCache[tier.variant] = shared
+        }
+        prepFraction = 0.8
+        let manager = StreamingNemotronMultilingualAsrManager()
+        try await manager.loadFromShared(shared)
+        prepMessage = "Ready"
+        return CoreMLSession(manager: manager)
+    }
 
-            // 2. Load the four int8 encoder shards + decoder/joint.
-            let tierKey = variantKey(code: code, chunkMs: chunkMs)
-            let policy = CoreAIComputePolicy.decide(tier: tierKey, chunkMs: chunkMs)
-            print("[CoreAI] compute policy for \(tierKey): \(policy.reason)")
-            let runner = CoreAIEncoderRunner(
-                coreaiDirectory: dir, cpuOnly: policy.cpuOnly, aneGuardTier: tierKey)
+    private func makeCoreAISession(tier: ModelTier) async throws -> ASRSession {
+        let dir = tier.directory.appendingPathComponent("coreai", isDirectory: true)
+        guard CoreAIAssets.hasEncoder(in: dir) else {
+            throw EngineError.coreAINotBundled(ship: tier.ship, tier: "\(tier.chunkMs)ms")
+        }
+        prepMessage = "Core AI: loading .aimodel shards…"
+
+        // 1. Mel front-end (Swift/vDSP).
+        let mel = try MelFrontend(resourceDirectory: dir)
+        prepFraction = 0.2
+
+        // 2. Encoder shards + fused decoder/joint, ANE-preferred or CPU-only.
+        let policy = CoreAIComputePolicy.decide(tier: tier.variant, chunkMs: tier.chunkMs)
+        print("[CoreAI] compute policy for \(tier.variant): \(policy.reason)")
+        let runner = CoreAIEncoderRunner(
+            coreaiDirectory: dir, cpuOnly: policy.cpuOnly, aneGuardTier: tier.variant)
+        do {
             try await runner.load()
             try await runner.loadDecoderJoint(coreaiDirectory: dir)
             prepFraction = 0.5
-            let fnNames = runner.shardFunctionNames
-            print(
-                runner.isMonolithic
-                    ? "[CoreAI] loaded monolithic int8 encoder + decoder/joint"
-                    : "[CoreAI] loaded \(fnNames.count) encoder shards + decoder/joint")
 
-            // ANE residency probe (console + Settings card).
-            let residency = CoreAIResidencyProbe.report(in: dir)
-            self.coreAIResidency = residency
+            coreAIResidency = CoreAIResidencyProbe.report(in: dir)
 
-            // 3. Tokenizer + loop params from metadata.json (blank idx, lang tags).
-            let meta = try CoreAIMetadata.load(from: commonDir)
-            let tokenizerURL = commonDir.appendingPathComponent("tokenizer.json")
+            // 3. Tokenizer + loop params from the tier's metadata.json.
+            let meta = try CoreAIMetadata.load(from: tier.directory)
             let tokenizer = try NemotronMultilingualTokenizer(
-                vocabPath: tokenizerURL,
+                vocabPath: tier.directory.appendingPathComponent("tokenizer.json"),
                 langTagTokenIds: Set(meta.langTagTokenIds)
             )
             prepFraction = 0.7
 
-            // 4. Build the streaming transcriber (mel → encoder → RNN-T greedy decode).
-            let totalMelFrames = meta.totalMelFrames
+            // 4. Streaming transcriber (mel → encoder → RNN-T greedy decode).
             let transcriber = CoreAIStreamingTranscriber(
                 runner: runner,
                 mel: mel,
                 tokenizer: tokenizer,
                 blankIdx: meta.blankIdx,
-                promptId: Int32(promptIdForCode(code, meta: meta)),
-                totalMelFrames: totalMelFrames,
+                promptId: Int32(meta.promptId(for: nil)),
+                totalMelFrames: meta.totalMelFrames,
                 chunkMelFrames: meta.chunkMelFrames,
                 preEncodeCache: meta.preEncodeCache
             )
-
-            self.coreAIRunner = runner
-            self.coreAIMel = mel
-            self.coreAITranscriber = transcriber
-            coreAIPreparedKey = preparedKey
-            phase = .ready
-            prepFraction = 1
-            let fp32Note =
-                residency.contains("⚠️")
-                ? " (encoder partly GPU — fp32 ops remain)" : " (encoder ANE-clean)"
-            prepMessage = "Core AI ready\(fp32Note)."
+            prepMessage = "Core AI ready — \(policy.reason)."
+            return CoreAISession(runner: runner, transcriber: transcriber, metadata: meta)
         } catch {
-            phase = .failed("Core AI: \(friendly(error))")
+            runner.tearDown()
+            throw error
         }
     }
 
-    /// Resolve the language prompt id for the current language code from the
-    /// model's prompt_dictionary (default = auto/101 when unset or unknown).
-    private func promptIdForCode(_ code: String?, meta: CoreAIMetadata) -> Int {
-        guard let code, let id = meta.promptDictionary[code] else {
-            return meta.promptDictionary["auto"] ?? 101
-        }
-        return id
+    /// Tear down the loaded session (crash-safe order for Core AI).
+    private func releaseSession() {
+        session?.tearDown()
+        session = nil
+        sessionKey = nil
+        appliedLanguageCode = nil
     }
 
-    /// Transcribe an audio file via the Core AI pipeline (mel → encoder →
-    /// RNN-T greedy decode through `decoder.aimodel` + `joint.aimodel`).
-    private func transcribeFileCoreAI(url: URL) async {
-        guard #available(iOS 27.0, *), let transcriber = coreAITranscriber, phase == .ready else {
-            transcript = "[Core AI] not ready: \(prepMessage)"
-            return
-        }
-        let streamed = settings.fileMode == .streamed
-        transcript = ""
+    private func applyLanguageIfNeeded(_ code: String?, to session: ASRSession) async {
+        if appliedLanguageCode == .some(code) { return }
+        await session.setLanguage(code)
+        appliedLanguageCode = .some(code)
         detectedLanguage = nil
-        fileProgress = 0
-        isStreaming = streamed
-        phase = .transcribingFile
-        liveActivity.start(language: liveActivityLanguageLabel, isListening: false)
-        liveActivityStatus = liveActivity.lastStatus
-        let started = Date()
-        do {
-            let samples = try await decodeFile(url)
-            print("[CoreAI] decoded file: \(samples.count) samples")
-            guard !samples.isEmpty else {
-                transcript = "[Core AI] decoded 0 samples from file."
-                phase = .ready
-                liveActivity.end(finalTranscript: transcript, language: liveActivityLanguageLabel)
-                return
-            }
-            // Stream partial text after each chunk when "Stream live" is selected.
-            // The transcriber runs on the MainActor-isolated engine, so the
-            // callback can publish to @Published transcript directly.
-            let onPartial: ((String) -> Void)? =
-                streamed
-                ? { [weak self] text in self?.transcript = text }
-                : nil
-            let text = try await transcriber.transcribe(
-                samples: samples,
-                onPartial: onPartial,
-                onProgress: { [weak self] fraction in
-                    self?.fileProgress = min(0.99, fraction)
-                }
-            )
-            isStreaming = false
-            let elapsed = Date().timeIntervalSince(started)
-            let duration = Double(samples.count) / 16000.0
-            lastRTFx = elapsed > 0 ? duration / elapsed : nil
-            // Surface an explicit note when decode produced no tokens, so the UI
-            // isn't silently blank.
-            transcript =
-                text.isEmpty
-                ? "[Core AI] no tokens emitted (all-blank decode) in \(String(format: "%.1f", elapsed))s."
-                : text
-            fileProgress = 1
-            phase = .ready
-            liveActivity.end(finalTranscript: transcript, language: liveActivityLanguageLabel)
-        } catch {
-            transcript = "[Core AI] error: \(friendly(error))"
-            phase = .failed("Core AI transcribe: \(friendly(error))")
-            liveActivity.end(finalTranscript: transcript, language: liveActivityLanguageLabel)
-        }
-    }
-
-    private nonisolated func probeShardedEncoderLoadIfPresent(in coremlDir: URL) async throws {
-        let shardURLs = (0 ..< 4).map {
-            coremlDir.appendingPathComponent("encoder_shard_\($0).mlmodelc")
-        }
-        guard shardURLs.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
-            return
-        }
-
-        let cfg = MLModelConfiguration()
-        cfg.computeUnits = .cpuAndNeuralEngine
-        print("[ShardedEncoderProbe] Found 4 sharded encoders; probing cpuAndNeuralEngine load")
-        for (idx, url) in shardURLs.enumerated() {
-            let started = Date()
-            print("[ShardedEncoderProbe] Loading shard \(idx): \(url.lastPathComponent)")
-            _ = try await MLModel.load(contentsOf: url, configuration: cfg)
-            let elapsed = Date().timeIntervalSince(started)
-            print(
-                "[ShardedEncoderProbe] Loaded shard \(idx) in \(String(format: "%.2f", elapsed))s")
-        }
-        print("[ShardedEncoderProbe] Completed sharded encoder ANE load probe")
     }
 
     enum EngineError: LocalizedError {
         case modelNotBundled(ship: String, tier: String)
         case coreAINotBundled(ship: String, tier: String)
+        case notReady
 
         var errorDescription: String? {
             switch self {
@@ -508,29 +345,26 @@ final class TranscriptionEngine: ObservableObject {
                 return "The \(ship) model for \(tier) isn't bundled in this build."
             case .coreAINotBundled(let ship, let tier):
                 return
-                    "Core AI models for \(ship) \(tier) aren't bundled (expected coreai/encoder_shard_0_int8.aimodel)."
+                    "Core AI models for \(ship) \(tier) aren't bundled (expected coreai/encoder_shard_{0..3}_int8.aimodel)."
+            case .notReady:
+                return "The speech model isn't loaded."
             }
         }
     }
 
-    private func applyLanguageIfNeeded(_ code: String?) async {
-        guard let manager else { return }
-        if appliedLanguageCode == .some(code) { return }
-        await manager.setLanguage(code)
-        appliedLanguageCode = .some(code)
-        detectedLanguage = nil
-    }
-
-    /// Force a reload on next use (e.g. after the user changes settings).
+    /// Called when the user changes backend / chunk size / language. Drops back
+    /// to idle if the loaded session no longer matches (the next use reloads),
+    /// and releases the loaded models right away on a backend switch.
     func invalidateForSettingsChange() {
-        // If the resolved variant changed, drop the loaded manager so the next
-        // prepare reloads. Language-only changes within the same ship are
-        // applied lazily via `applyLanguageIfNeeded`.
-        let key = variantKey(code: settings.languageCode, chunkMs: settings.chunkSize.rawValue)
-        if key != loadedVariantKey || settings.backend == .coreai {
-            loadedVariantKey = nil
-            if phase == .ready { phase = .idle }
+        let desired = desiredSessionKey
+        guard desired != sessionKey else { return }
+        if !isBusy, let sessionKey,
+            !sessionKey.hasPrefix("\(settings.backend.rawValue)|")
+        {
+            releaseSession()
+            if settings.backend != .coreml { sharedCache.removeAll() }
         }
+        if phase == .ready { phase = .idle }
     }
 
     // MARK: - File transcription
@@ -538,86 +372,48 @@ final class TranscriptionEngine: ObservableObject {
     func transcribeFile(url: URL) async {
         guard !isBusy else { return }
         await prepareModelIfNeeded()
-        if settings.backend == .coreai {
-            await transcribeFileCoreAI(url: url)
-            return
-        }
-        guard let manager else { return }
-        guard phase == .ready else { return }
+        guard let session, phase == .ready else { return }
 
         let streamed = settings.fileMode == .streamed
         transcript = ""
         detectedLanguage = nil
         fileProgress = 0
+        lastStageTimes = nil
         isStreaming = streamed
         phase = .transcribingFile
         liveActivity.start(language: liveActivityLanguageLabel, isListening: false)
         liveActivityStatus = liveActivity.lastStatus
 
-        let firstVisibleStarted = Date()
-        var didShowFirstText = false
-
-        // Wire (or clear) the live partial callback.
-        if streamed {
-            await manager.setPartialCallback { [weak self] text in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if !didShowFirstText, !text.isEmpty {
-                        didShowFirstText = true
-                        let elapsed = Date().timeIntervalSince(firstVisibleStarted)
+        let started = Date()
+        var loggedFirstText = false
+        do {
+            await session.reset()
+            let durationHint = try? await audioDuration(url)
+            var totalSamples = 0
+            for try await block in decodedFileBlocks(url) {
+                if let partial = try await session.process(block), streamed {
+                    if !loggedFirstText, !partial.isEmpty {
+                        loggedFirstText = true
                         print(
-                            "[FileTranscribe] first partial after \(String(format: "%.2f", elapsed))s"
+                            "[FileTranscribe] first partial after \(String(format: "%.2f", Date().timeIntervalSince(started)))s"
                         )
                     }
-                    self.transcript = text
+                    transcript = partial
                 }
-            }
-        } else {
-            await manager.clearPartialCallback()
-        }
-
-        let started = Date()
-        do {
-            await manager.reset()
-
-            let durationHint = try? await audioDuration(url)
-            let decodeStarted = Date()
-            var totalSamples = 0
-            var didLogFirstBlock = false
-            for try await block in decodedFileBlocks(url) {
-                if Task.isCancelled { break }
-                if !didLogFirstBlock {
-                    didLogFirstBlock = true
-                    print(
-                        "[FileTranscribe] first decoded block after \(String(format: "%.2f", Date().timeIntervalSince(decodeStarted)))s"
-                    )
-                }
-                _ = try await manager.process(samples: block)
                 totalSamples += block.count
                 if let durationHint, durationHint > 0 {
-                    fileProgress = min(0.99, Double(totalSamples) / (durationHint * 16000.0))
+                    setFileProgress(min(0.99, Double(totalSamples) / (durationHint * 16000.0)))
                 }
             }
 
-            let finalText = try await manager.finish()
-            transcript = finalText
-            if !didShowFirstText, !finalText.isEmpty {
-                didShowFirstText = true
-                let elapsed = Date().timeIntervalSince(firstVisibleStarted)
-                print(
-                    "[FileTranscribe] first text at final after \(String(format: "%.2f", elapsed))s"
-                )
-            }
+            transcript = try await session.finish()
             fileProgress = 1
             detectedLanguage = await resolveDetectedLanguage()
 
             let elapsed = Date().timeIntervalSince(started)
             let duration = Double(totalSamples) / 16000.0
             lastRTFx = elapsed > 0 ? duration / elapsed : nil
-            lastStageTimes = String(
-                format: "prep %.2fs enc %.2fs dec %.2fs chunks %d",
-                Double(await manager.prepNanos) / 1e9, Double(await manager.encNanos) / 1e9,
-                Double(await manager.decNanos) / 1e9, await manager.chunkCount)
+            lastStageTimes = await session.stageTimes()
 
             phase = .ready
             isStreaming = false
@@ -629,15 +425,9 @@ final class TranscriptionEngine: ObservableObject {
         }
     }
 
-    /// Read + resample an audio file on a background task.
-    private nonisolated func decodeFile(_ url: URL) async throws -> [Float] {
-        try await Task.detached(priority: .userInitiated) {
-            let converter = AudioConverter()
-            // Security-scoped access for files vended by the document picker.
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            return try converter.resampleAudioFile(url)
-        }.value
+    /// Publish file progress only in ≥1% steps (and the final value).
+    private func setFileProgress(_ value: Double) {
+        if value - fileProgress >= 0.01 || value >= 1 { fileProgress = value }
     }
 
     private nonisolated func audioDuration(_ url: URL) async throws -> Double {
@@ -649,6 +439,8 @@ final class TranscriptionEngine: ObservableObject {
         }.value
     }
 
+    /// Read + resample an audio file block by block (16 kHz mono) on a
+    /// background task, so transcription starts before the whole file is decoded.
     private nonisolated func decodedFileBlocks(_ url: URL) -> AsyncThrowingStream<[Float], Error> {
         AsyncThrowingStream { continuation in
             Task.detached(priority: .userInitiated) {
@@ -703,21 +495,12 @@ final class TranscriptionEngine: ObservableObject {
         }
 
         await prepareModelIfNeeded()
-        if settings.backend == .coreai {
-            await startListeningCoreAI()
-            return
-        }
-        guard let manager, phase == .ready else { return }
+        guard let session, phase == .ready else { return }
 
         transcript = ""
         detectedLanguage = nil
         isStreaming = true
-
-        // Mic streaming always shows live partials.
-        await manager.setPartialCallback { [weak self] text in
-            Task { @MainActor in self?.transcript = text }
-        }
-        await manager.reset()
+        await session.reset()
 
         let capture = MicrophoneCapture()
         capture.onLevel = { [weak self] level in
@@ -733,68 +516,22 @@ final class TranscriptionEngine: ObservableObject {
             micTask = Task { [weak self] in
                 guard let self else { return }
                 do {
+                    // Ends once `stopListening` stops the capture and every
+                    // buffered block has been processed.
                     for await block in stream {
-                        if Task.isCancelled { break }
-                        _ = try await manager.process(samples: block)
-                    }
-                } catch {
-                    await MainActor.run {
-                        self.phase = .failed(self.friendly(error))
-                        self.liveActivity.end(
-                            finalTranscript: self.transcript,
-                            language: self.liveActivityLanguageLabel
-                        )
-                    }
-                }
-            }
-        } catch {
-            phase = .failed(friendly(error))
-            isStreaming = false
-            micCapture = nil
-        }
-    }
-
-    /// Live microphone transcription on the Core AI backend: mirror of the
-    /// CoreML branch below, feeding capture blocks into the transcriber's
-    /// chunk buffer and publishing the running partial after each chunk.
-    private func startListeningCoreAI() async {
-        guard #available(iOS 27.0, *), let transcriber = coreAITranscriber, phase == .ready else {
-            transcript = "[Core AI] not ready: \(prepMessage)"
-            return
-        }
-
-        transcript = ""
-        detectedLanguage = nil
-        isStreaming = true
-        transcriber.reset()
-
-        let capture = MicrophoneCapture()
-        capture.onLevel = { [weak self] level in
-            Task { @MainActor in self?.micLevel = level }
-        }
-        self.micCapture = capture
-
-        do {
-            let stream = try await capture.start()
-            phase = .listening
-            liveActivity.start(language: liveActivityLanguageLabel)
-            liveActivityStatus = liveActivity.lastStatus
-            micTask = Task { [weak self] in
-                guard let self else { return }
-                do {
-                    for await block in stream {
-                        if Task.isCancelled { break }
-                        if try await transcriber.stream(samples: block) {
-                            self.transcript = transcriber.partialText
+                        if let partial = try await session.process(block) {
+                            self.transcript = partial
                         }
                     }
                 } catch {
-                    await MainActor.run {
-                        self.phase = .failed(self.friendly(error))
-                        self.liveActivity.end(
-                            finalTranscript: self.transcript,
-                            language: self.liveActivityLanguageLabel
-                        )
+                    self.phase = .failed(self.friendly(error))
+                    self.isStreaming = false
+                    self.liveActivity.end(
+                        finalTranscript: self.transcript, language: self.liveActivityLanguageLabel)
+                    if !self.isStopping {
+                        await self.micCapture?.stop()
+                        self.micCapture = nil
+                        self.micLevel = 0
                     }
                 }
             }
@@ -806,40 +543,31 @@ final class TranscriptionEngine: ObservableObject {
     }
 
     func stopListening() async {
-        guard phase == .listening else { return }
+        guard phase == .listening, !isStopping else { return }
+        isStopping = true
+        defer { isStopping = false }
+
+        // Stop the capture first (this finishes the sample stream), then let
+        // the mic task drain the blocks already buffered. Cancelling it instead
+        // could cut a chunk off mid-encode while `finish()` touches the same
+        // streaming caches / decoder state.
         await micCapture?.stop()
-        micTask?.cancel()
+        await micTask?.value
         micTask = nil
         micCapture = nil
         micLevel = 0
 
-        if settings.backend == .coreai {
-            if #available(iOS 27.0, *), let transcriber = coreAITranscriber {
-                do {
-                    let finalText = try await transcriber.finishStreaming()
-                    if !finalText.isEmpty { transcript = finalText }
-                } catch {
-                    // Keep whatever partial we have; nothing fatal on stop.
-                }
-            }
-            isStreaming = false
-            phase = .ready
-            liveActivity.end(finalTranscript: transcript, language: liveActivityLanguageLabel)
-            return
-        }
+        // The mic task failed while draining; it already reported the error.
+        guard phase == .listening else { return }
 
-        guard let manager else {
-            phase = .ready
-            isStreaming = false
-            liveActivity.end(finalTranscript: transcript, language: liveActivityLanguageLabel)
-            return
-        }
-        do {
-            let finalText = try await manager.finish()
-            if !finalText.isEmpty { transcript = finalText }
-            detectedLanguage = await resolveDetectedLanguage()
-        } catch {
-            // Keep whatever partial we have; surface nothing fatal on stop.
+        if let session {
+            do {
+                let finalText = try await session.finish()
+                if !finalText.isEmpty { transcript = finalText }
+                detectedLanguage = await resolveDetectedLanguage()
+            } catch {
+                // Keep whatever partial we have; nothing fatal on stop.
+            }
         }
         isStreaming = false
         phase = .ready
@@ -853,7 +581,7 @@ final class TranscriptionEngine: ObservableObject {
             // User pinned a language — show that.
             return settings.language.name
         }
-        guard let manager, let code = await manager.detectedLanguage() else { return nil }
+        guard let code = await session?.detectedLanguageCode() else { return nil }
         return ASRLanguageCatalog.displayName(forDetectedCode: code)
     }
 
@@ -867,19 +595,138 @@ final class TranscriptionEngine: ObservableObject {
     /// Retry preparation after a failure (driven by the failure overlay).
     func retryPreparation() async {
         // Drop any half-state so prepare re-runs cleanly.
-        loadedVariantKey = nil
+        releaseSession()
         phase = .idle
         await prepareModelIfNeeded()
     }
 
     private func friendly(_ error: Error) -> String {
-        // CoreML's Apple-Silicon requirement is the most common hard failure
+        // CoreML's Apple-silicon requirement is the most common hard failure
         // (e.g. running on an Intel Mac / unsupported target).
         let raw = error.localizedDescription
         if raw.localizedCaseInsensitiveContains("Apple Silicon") {
-            return
-                "This model needs the Apple Neural Engine. Run on a physical Apple-Silicon device."
+            return "This model needs an Apple-silicon device. Run on a physical iPhone or iPad."
         }
         return raw
+    }
+}
+
+// MARK: - Backend sessions
+
+/// One prepared backend pipeline, driven identically by the file and mic flows.
+@MainActor
+private protocol ASRSession: AnyObject {
+    /// Apply a language hint (nil = auto-detect) for the next utterance.
+    func setLanguage(_ code: String?) async
+    /// Start a new utterance (clears streaming caches + decoder state).
+    func reset() async
+    /// Feed 16 kHz mono samples (any block size); returns the running
+    /// transcript when it changed.
+    func process(_ samples: [Float]) async throws -> String?
+    /// Flush the buffered tail (zero-padded to a full chunk); final transcript.
+    func finish() async throws -> String
+    /// Language tag the model emitted this utterance (e.g. "en-US").
+    func detectedLanguageCode() async -> String?
+    /// Per-stage timing of the last utterance, if the backend records it.
+    func stageTimes() async -> String?
+    /// Release model resources.
+    func tearDown()
+}
+
+/// CoreML backend: the vendored streaming manager (split encoder + smart-spec).
+@MainActor
+private final class CoreMLSession: ASRSession {
+    private var manager: StreamingNemotronMultilingualAsrManager?
+    private var lastPartial = ""
+
+    init(manager: StreamingNemotronMultilingualAsrManager) {
+        self.manager = manager
+    }
+
+    private func loaded() throws -> StreamingNemotronMultilingualAsrManager {
+        guard let manager else { throw TranscriptionEngine.EngineError.notReady }
+        return manager
+    }
+
+    func setLanguage(_ code: String?) async { await manager?.setLanguage(code) }
+
+    func reset() async {
+        lastPartial = ""
+        await manager?.reset()
+    }
+
+    func process(_ samples: [Float]) async throws -> String? {
+        let manager = try loaded()
+        _ = try await manager.process(samples: samples)
+        let partial = await manager.getPartialTranscript()
+        guard partial != lastPartial else { return nil }
+        lastPartial = partial
+        return partial
+    }
+
+    func finish() async throws -> String { try await loaded().finish() }
+
+    func detectedLanguageCode() async -> String? { await manager?.detectedLanguage() }
+
+    func stageTimes() async -> String? {
+        guard let manager else { return nil }
+        return String(
+            format: "prep %.2fs enc %.2fs dec %.2fs chunks %d",
+            Double(await manager.prepNanos) / 1e9, Double(await manager.encNanos) / 1e9,
+            Double(await manager.decNanos) / 1e9, await manager.chunkCount)
+    }
+
+    func tearDown() { manager = nil }
+}
+
+/// Core AI backend: `CoreAIStreamingTranscriber` over `CoreAIEncoderRunner`.
+@MainActor
+private final class CoreAISession: ASRSession {
+    private var runner: CoreAIEncoderRunner?
+    private var transcriber: CoreAIStreamingTranscriber?
+    private let metadata: CoreAIMetadata
+    private var lastPartial = ""
+
+    init(runner: CoreAIEncoderRunner, transcriber: CoreAIStreamingTranscriber, metadata: CoreAIMetadata) {
+        self.runner = runner
+        self.transcriber = transcriber
+        self.metadata = metadata
+    }
+
+    private func loaded() throws -> CoreAIStreamingTranscriber {
+        guard let transcriber else { throw TranscriptionEngine.EngineError.notReady }
+        return transcriber
+    }
+
+    func setLanguage(_ code: String?) async {
+        transcriber?.promptId = Int32(metadata.promptId(for: code))
+    }
+
+    func reset() async {
+        lastPartial = ""
+        transcriber?.reset()
+    }
+
+    func process(_ samples: [Float]) async throws -> String? {
+        let transcriber = try loaded()
+        guard try await transcriber.stream(samples: samples) else { return nil }
+        let partial = transcriber.partialText
+        guard partial != lastPartial else { return nil }
+        lastPartial = partial
+        return partial
+    }
+
+    func finish() async throws -> String { try await loaded().finishStreaming() }
+
+    func detectedLanguageCode() async -> String? { transcriber?.detectedLanguage }
+
+    func stageTimes() async -> String? { nil }
+
+    /// Drop the transcriber first (it retains the runner), then release the
+    /// runner's functions before its models.
+    func tearDown() {
+        transcriber = nil
+        runner?.tearDown()
+        runner = nil
     }
 }

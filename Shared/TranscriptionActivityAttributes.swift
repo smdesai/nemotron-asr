@@ -4,7 +4,7 @@ import Foundation
 /// Shared Live Activity contract between the app (which starts/updates/ends the
 /// activity) and the widget extension (which renders it). Dependency-free on
 /// purpose — it imports only ActivityKit/Foundation so the same file compiles
-/// into both targets without dragging in FluidAudio or any app code.
+/// into both targets without dragging in the ASR runtime or any app code.
 struct TranscriptionActivityAttributes: ActivityAttributes {
     /// The live, mutable part — pushed on every (throttled) transcript update.
     struct ContentState: Codable, Hashable {

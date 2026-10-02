@@ -8,7 +8,7 @@ import SwiftUI
 /// bundled CoreML `2240ms` multilingual models on launch and drives live
 /// microphone transcription, publishing everything the SwiftUI view needs.
 ///
-/// Runs the vendored FluidAudio CoreML pipeline (split encoder on the ANE +
+/// Runs the vendored Nemotron CoreML pipeline (split encoder on the ANE +
 /// bare decoder/joint on CPU). The Core AI (.aimodel) path was abandoned for
 /// now — the watchOS 27 beta's Core AI compiler has no m11 SoC backend
 /// ("Unsupported SoC (m11)"); revisit on future betas.
