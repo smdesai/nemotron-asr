@@ -14,7 +14,9 @@ import Foundation
 ///   - `computeTypes: [String]`
 ///   - `storageTypes: [StorageType]` (`.typeName`, `.count`)
 ///   - `operationDistribution: [OperationCount]` (`.operationName`, `.count`)
-@available(iOS 27.0, watchOS 27.0, *)
+///
+/// Diagnostic only: shards that can't be summarized are reported inline, and
+/// `report` returns nil (no Settings card) when nothing could be probed.
 enum CoreAIResidencyProbe {
 
     struct ShardReport {
@@ -46,7 +48,7 @@ enum CoreAIResidencyProbe {
         var hasFP32Storage: Bool { fp32Elements > 1000 }
     }
 
-    /// Probe all `encoder_shard_{0..3}.aimodel` in the given `coreai/` directory.
+    /// Probe all `encoder_shard_{0..3}_int8.aimodel` in the given `coreai/` directory.
     static func probeShards(in dir: URL) -> [ShardReport] {
         var reports: [ShardReport] = []
         for i in 0 ..< 4 {
@@ -85,16 +87,21 @@ enum CoreAIResidencyProbe {
     }
 
     /// Format a human-readable residency report and print it (and return it for
-    /// the UI). Flags any shard whose storage still contains fp32.
-    static func report(in dir: URL) -> String {
+    /// the UI). Flags any shard whose storage still contains fp32. nil when no
+    /// shard could be summarized.
+    static func report(in dir: URL) -> String? {
         let reports = probeShards(in: dir)
+        guard reports.contains(where: { !$0.storageTypes.isEmpty || !$0.topOps.isEmpty }) else {
+            print("[CoreAI] residency probe: no shard summaries available — skipped")
+            return nil
+        }
         var lines: [String] = ["=== Core AI encoder residency probe ==="]
         for r in reports {
             lines.append("• \(r.name): computeTypes=\(r.computeTypes)")
             let storageStr = r.storageTypes.map { "\($0.type)×\($0.count)" }.joined(separator: ", ")
             let fpNote: String
             if r.hasFP32Storage {
-                fpNote = "   ⚠️ fp32 tensors present → GPU fallback"
+                fpNote = "   ⚠️ fp32 tensors present → off-ANE fallback"
             } else if r.fp32Elements > 0 {
                 fpNote = "   ✓ fp16-clean (\(r.fp32Elements) scalar constants)"
             } else {

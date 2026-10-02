@@ -24,7 +24,6 @@ import os
 @available(watchOS 27.0, *)
 @MainActor
 enum WatchCoreAIProbe {
-    static let appGroupCacheId = "group.com.sdesai.NemotronASR"
     /// 2240 ms tier: 224 mel frames + 9 pre-encode cache frames per chunk.
     static let melFrames = 233
     static let chunkSeconds = 2.24
@@ -94,7 +93,7 @@ enum WatchCoreAIProbe {
                 let model: AIModel
                 if mode == "default" {
                     model = try await AIModel(contentsOf: url)
-                } else if let cache = AIModelCache(appGroup: appGroupCacheId) {
+                } else if let cache = AIModelCache(appGroup: CoreAIEncoderRunner.appGroupCacheId) {
                     model = try await AIModel.specialize(contentsOf: url, options: .cpuOnly, cache: cache)
                 } else {
                     model = try await AIModel(contentsOf: url, options: .cpuOnly)
@@ -170,7 +169,7 @@ enum WatchCoreAIProbe {
         do {
             let t = ContinuousClock.now
             let m: AIModel
-            if let cache = AIModelCache(appGroup: appGroupCacheId) {
+            if let cache = AIModelCache(appGroup: CoreAIEncoderRunner.appGroupCacheId) {
                 m = try await AIModel.specialize(contentsOf: shard0, options: .cpuOnly, cache: cache)
             } else {
                 m = try await AIModel(contentsOf: shard0, options: .cpuOnly)
