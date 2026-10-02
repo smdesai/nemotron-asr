@@ -2,7 +2,7 @@
 /NemotronWatchModels/
 /NemotronWatchSentiment/
 
-Resources/
+Resources/Models
 
 # Local agent state and planning notes
 /.claude/
