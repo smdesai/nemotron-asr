@@ -2,12 +2,9 @@ import Foundation
 
 /// Configuration for Nemotron Speech Streaming Multilingual 0.6B
 ///
-/// Loaded from `metadata.json`. Differs from the English variant in three ways:
-///   1. Larger vocab (13,087 tokens) and matching `blank_idx`.
-///   2. Smaller channel cache: `[1, 24, 56, 1024]` (att_context_size=[56, 0]).
-///   3. The encoder takes an additional `prompt_id` int32 [1] input per chunk
-///      which selects the language hint embedding. The model also emits a leading
-///      `<xx-XX>` language-tag token whose IDs are listed in `lang_tag_token_ids`.
+/// Loaded from `metadata.json`. The vocab (~13k tokens) includes `<xx-XX>`
+/// language-tag tokens (`lang_tag_token_ids`), and the encoder takes an extra
+/// `prompt_id` int32 [1] input per chunk selecting the language-hint embedding.
 public struct NemotronMultilingualStreamingConfig: Sendable {
     /// Sample rate in Hz
     public let sampleRate: Int

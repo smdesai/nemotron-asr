@@ -4,10 +4,10 @@ import OSLog
 /// Lightweight logger that writes to Unified Logging and, optionally, to console.
 /// Use this instead of `OSLog.Logger` so CLI runs can surface logs without `print`.
 public struct AppLogger: Sendable {
-    /// Default subsystem for all loggers in FluidAudio.
+    /// Default subsystem for all loggers in the Nemotron ASR pipeline.
     /// Keep this consistent; categories should vary per component.
     /// Note: Set this before creating any logger instances.
-    nonisolated(unsafe) public static var defaultSubsystem: String = "com.fluidinference"
+    nonisolated(unsafe) public static var defaultSubsystem: String = "com.sdesai.NemotronASR"
 
     public enum Level: Int, Sendable {
         case debug = 0
@@ -127,7 +127,7 @@ public struct AppLogger: Sendable {
         case .error: levelLabel = "ERROR"
         case .fault: levelLabel = "FAULT"
         }
-        let line = "[\(timestamp)] [\(levelLabel)] [FluidAudio.\(category)] \(message)\n"
+        let line = "[\(timestamp)] [\(levelLabel)] [NemotronASR.\(category)] \(message)\n"
         do {
             try FileHandle.standardError.write(contentsOf: Data(line.utf8))
         } catch {
@@ -149,7 +149,7 @@ actor LogConsole {
 
     func write(level: AppLogger.Level, category: String, message: String) {
         let timestamp = dateFormatter.string(from: Date())
-        let line = "[\(timestamp)] [\(label(for: level))] [FluidAudio.\(category)] \(message)\n"
+        let line = "[\(timestamp)] [\(label(for: level))] [NemotronASR.\(category)] \(message)\n"
         if let data = line.data(using: .utf8) {
             do {
                 try FileHandle.standardError.write(contentsOf: data)

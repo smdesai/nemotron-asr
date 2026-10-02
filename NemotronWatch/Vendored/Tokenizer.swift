@@ -1,15 +1,14 @@
 import Foundation
 
+/// Flat `{"id": "piece"}` SentencePiece vocabulary decoder.
 public final class Tokenizer: Sendable {
-    private let vocab: [String: String]
     private let idToToken: [Int: String]
 
     public init(vocabPath: URL) throws {
         let data = try Data(contentsOf: vocabPath)
         let json = try JSONSerialization.jsonObject(with: data, options: []) as! [String: String]
-
-        self.vocab = json
         var idToToken: [Int: String] = [:]
+        idToToken.reserveCapacity(json.count)
         for (key, value) in json {
             if let id = Int(key) {
                 idToToken[id] = value
@@ -30,15 +29,8 @@ public final class Tokenizer: Sendable {
             .trimmingCharacters(in: .whitespaces)
     }
 
-    /// Returns the exact token string from vocab for a token id.
-    public func rawToken(for id: Int) -> String? {
-        idToToken[id]
-    }
-
-    /// Return the raw SentencePiece piece for a given token id, or `nil`
-    /// if the id is not in the vocabulary. Used by callers that need
-    /// the original piece text (e.g. multilingual lang-tag inspection).
+    /// Raw SentencePiece piece for a token id, or `nil` if not in the vocab.
     public func piece(forId id: Int) -> String? {
-        return idToToken[id]
+        idToToken[id]
     }
 }

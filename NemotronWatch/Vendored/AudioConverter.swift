@@ -1,6 +1,5 @@
 @preconcurrency import AVFoundation
 import Accelerate
-import CoreMedia
 import Foundation
 import OSLog
 import os
@@ -36,20 +35,6 @@ final public class AudioConverter: Sendable {
         }
     }
 
-    /// Public initializer so external modules (e.g. CLI) can construct the converter
-    /// - Parameters:
-    ///   - sampleRate: Target audio sample rate
-    ///   - debug: Whether to log debug messages
-    public init(sampleRate: Double, debug: Bool = false) {
-        self.debug = debug
-        self.targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-    }
-
     // MARK: - Public Resampling Methods
 
     /// Resample a float array from one sample rate to the target sample rate.
@@ -57,7 +42,7 @@ final public class AudioConverter: Sendable {
     ///   - samples: Input audio samples (mono Float32)
     ///   - inputRate: Input sample rate (e.g., 48000)
     /// - Returns: Float array resampled to target sample rate
-    public func resample(_ samples: [Float], from inputRate: Double) throws -> [Float] {
+    private func resample(_ samples: [Float], from inputRate: Double) throws -> [Float] {
         guard !samples.isEmpty else { return [] }
 
         let outputRate = targetFormat.sampleRate
@@ -112,15 +97,6 @@ final public class AudioConverter: Sendable {
         return try resample(monoSamples, from: format.sampleRate)
     }
 
-    /// Convert an audio file path to target sample rate mono Float32 samples.
-    /// - Parameters:
-    ///   - path: File path of the audio file to read
-    /// - Returns: Float array at target sample rate mono
-    public func resampleAudioFile(path: String) throws -> [Float] {
-        let url = URL(fileURLWithPath: path)
-        return try resampleAudioFile(url)
-    }
-
     // MARK: - Private Helpers
 
     /// Resample using AVAudioConverter with raw float arrays
@@ -149,7 +125,7 @@ final public class AudioConverter: Sendable {
 
         // Copy samples into buffer
         if let channelData = inputBuffer.floatChannelData {
-            samples.withUnsafeBufferPointer { src in
+            _ = samples.withUnsafeBufferPointer { src in
                 memcpy(channelData[0], src.baseAddress!, samples.count * MemoryLayout<Float>.stride)
             }
         }
@@ -234,61 +210,6 @@ final public class AudioConverter: Sendable {
         guard let channelData = outputBuffer.floatChannelData else { return [] }
         return Array(
             UnsafeBufferPointer(start: channelData[0], count: Int(outputBuffer.frameLength)))
-    }
-
-    /// Convert a CMSampleBuffer to the target format
-    /// - Parameter sampleBuffer: Input CMSampleBuffer containing PCM data
-    /// - Returns: Float array at 16kHz mono
-    /// - Throws: `AudioConverterError.sampleBufferFormatMissing` (most likely caused by the sample buffer belonging
-    ///  to a video frame)
-    public func resampleSampleBuffer(_ sampleBuffer: CMSampleBuffer) throws -> [Float] {
-        let buffer = try extractAVAudioPCMBuffer(from: sampleBuffer)
-        return try convertBuffer(buffer, to: targetFormat)
-    }
-
-    /// Extract the `AVAudioPCMBuffer` from a `CMSampleBuffer`
-    /// - Parameter sampleBuffer: Input CMSampleBuffer containing PCM data
-    /// - Returns: An `AVAudioPCMBuffer`
-    /// - Throws: `AudioConverterError.sampleBufferFormatMissing` (most likely caused by the sample buffer belonging
-    ///  to a video frame)
-    public func extractAVAudioPCMBuffer(from sampleBuffer: CMSampleBuffer) throws
-        -> AVAudioPCMBuffer
-    {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-            let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(
-                formatDescription)
-        else {
-            throw AudioConverterError.sampleBufferFormatMissing
-        }
-
-        guard let sourceFormat = AVAudioFormat(streamDescription: streamDescription) else {
-            throw AudioConverterError.failedToCreateSourceFormat
-        }
-
-        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
-
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount)
-        else {
-            throw AudioConverterError.failedToCreateBuffer
-        }
-        buffer.frameLength = frameCount
-
-        guard frameCount > 0 else {
-            return buffer
-        }
-
-        let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: buffer.mutableAudioBufferList
-        )
-
-        guard status == noErr else {
-            throw AudioConverterError.sampleBufferCopyFailed(status)
-        }
-
-        return buffer
     }
 
     /// Convert a buffer to the target format.
@@ -474,67 +395,12 @@ final public class AudioConverter: Sendable {
 
 }
 
-// MARK: - WAV Utilities (shared by TTS/ASR)
-public enum AudioWAV {
-    /// Convert float samples to 16-bit PCM mono WAV at the given sample rate.
-    public static func data(from samples: [Float], sampleRate: Double) throws -> Data {
-        // Normalize to [-1, 1]
-        let maxVal = samples.map { abs($0) }.max() ?? 1.0
-        let norm = maxVal > 0 ? samples.map { $0 / maxVal } : samples
-
-        // Convert to 16-bit PCM
-        var pcm = Data()
-        pcm.reserveCapacity(norm.count * MemoryLayout<Int16>.size)
-        for s in norm {
-            let clipped = max(-1.0, min(1.0, s))
-            let v = Int16(clipped * 32767)
-            var le = v.littleEndian
-            withUnsafeBytes(of: &le) { pcm.append(contentsOf: $0) }
-        }
-
-        // Build WAV header
-        var wav = Data()
-        // RIFF header
-        wav.append(contentsOf: "RIFF".data(using: .ascii)!)
-        var fileSize = UInt32(36 + pcm.count).littleEndian
-        withUnsafeBytes(of: &fileSize) { wav.append(contentsOf: $0) }
-        wav.append(contentsOf: "WAVE".data(using: .ascii)!)
-
-        // fmt chunk
-        wav.append(contentsOf: "fmt ".data(using: .ascii)!)
-        var subchunk1Size = UInt32(16).littleEndian  // PCM
-        withUnsafeBytes(of: &subchunk1Size) { wav.append(contentsOf: $0) }
-        var audioFormat = UInt16(1).littleEndian  // PCM
-        withUnsafeBytes(of: &audioFormat) { wav.append(contentsOf: $0) }
-        var numChannels = UInt16(1).littleEndian
-        withUnsafeBytes(of: &numChannels) { wav.append(contentsOf: $0) }
-        var sr = UInt32(sampleRate).littleEndian
-        withUnsafeBytes(of: &sr) { wav.append(contentsOf: $0) }
-        var byteRate = UInt32(sampleRate * 2).littleEndian  // 16-bit mono
-        withUnsafeBytes(of: &byteRate) { wav.append(contentsOf: $0) }
-        var blockAlign = UInt16(2).littleEndian
-        withUnsafeBytes(of: &blockAlign) { wav.append(contentsOf: $0) }
-        var bitsPerSample = UInt16(16).littleEndian
-        withUnsafeBytes(of: &bitsPerSample) { wav.append(contentsOf: $0) }
-
-        // data chunk
-        wav.append(contentsOf: "data".data(using: .ascii)!)
-        var dataSize = UInt32(pcm.count).littleEndian
-        withUnsafeBytes(of: &dataSize) { wav.append(contentsOf: $0) }
-        wav.append(pcm)
-
-        return wav
-    }
-}
-
 /// Errors that can occur during audio conversion
 public enum AudioConverterError: LocalizedError {
     case failedToCreateConverter
     case failedToCreateBuffer
     case conversionFailed(Error?)
-    case sampleBufferFormatMissing
     case failedToCreateSourceFormat
-    case sampleBufferCopyFailed(OSStatus)
 
     public var errorDescription: String? {
         switch self {
@@ -544,13 +410,8 @@ public enum AudioConverterError: LocalizedError {
             return "Failed to create conversion buffer"
         case .conversionFailed(let error):
             return "Audio conversion failed: \(error?.localizedDescription ?? "Unknown error")"
-        case .sampleBufferFormatMissing:
-            return "Sample buffer is missing a valid audio format description."
         case .failedToCreateSourceFormat:
-            // This edge case usually arises when a video sample is provided instead of an audio sample
-            return "Failed to create a source audio format description for CMSampleBuffer."
-        case .sampleBufferCopyFailed(let status):
-            return "Failed to copy samples from CMSampleBuffer (status: \(status))"
+            return "Failed to create a source audio format description."
         }
     }
 }

@@ -1,10 +1,6 @@
 import Foundation
 
-// Minimal vendored subset of FluidAudio's AsrTypes for the watchOS port.
-// Only `ASRError` is needed by the Nemotron multilingual streaming manager;
-// the full ASRConfig / ASRResult / TokenTiming / ASRPerformanceMetrics types
-// (and their TdtConfig / ASRConstants dependencies) are unused on the watch
-// and intentionally omitted.
+// Errors surfaced by the streaming Nemotron CoreML pipeline.
 
 // MARK: - Errors
 
@@ -21,11 +17,11 @@ public enum ASRError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notInitialized:
-            return "AsrManager not initialized. Call initialize() first."
+            return "ASR manager not initialized. Load the models first."
         case .invalidAudioData:
             return "Invalid audio data provided. Must be at least 300ms of 16kHz audio."
         case .modelLoadFailed:
-            return "Failed to load Parakeet CoreML models."
+            return "Failed to load Nemotron CoreML models."
         case .processingFailed(let message):
             return "ASR processing failed: \(message)"
         case .modelCompilationFailed:

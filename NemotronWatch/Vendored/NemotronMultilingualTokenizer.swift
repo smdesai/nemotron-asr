@@ -21,8 +21,8 @@ public struct NemotronMultilingualDecoded: Sendable {
 ///   2. Strips all language-tag tokens from the textual transcript so they don't
 ///      appear in the user-visible output.
 ///
-/// Underlying vocab format is identical to the English variant: a flat
-/// `{"id": "piece"}` JSON dictionary, decoded by the shared `Tokenizer`.
+/// The underlying vocab is a flat `{"id": "piece"}` JSON dictionary,
+/// decoded by `Tokenizer`.
 public final class NemotronMultilingualTokenizer: Sendable {
     private let base: Tokenizer
     private let langTagTokenIds: Set<Int>
@@ -65,18 +65,5 @@ public final class NemotronMultilingualTokenizer: Sendable {
             return piece
         }
         return String(piece.dropFirst().dropLast())
-    }
-
-    /// Look up the token id for a language-tag piece (e.g. `"en-US"` →
-    /// the id whose piece equals `"<en-US>"`). Returns `nil` if no
-    /// matching tag is present in `langTagTokenIds`.
-    public func langTagTokenId(forLanguage language: String) -> Int? {
-        let target = "<\(language)>"
-        for id in langTagTokenIds {
-            if base.piece(forId: id) == target {
-                return id
-            }
-        }
-        return nil
     }
 }
