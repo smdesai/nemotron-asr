@@ -1,68 +1,37 @@
 #!/usr/bin/env bash
-# Stage the Nemotron multilingual 2240ms CoreML models into the watch bundle.
+# Stage the Nemotron multilingual 2240ms CoreML models into the watch bundle
+# (NemotronWatchModels/), by delegating to the conversion kit:
 #
-# The watchOS app loads models from the app bundle (no on-device download) and
-# watchOS cannot compile .mlpackage at runtime, so everything is staged as
-# pre-compiled .mlmodelc: the split encoder (pre_encode + 4 shards) ships
-# compiled in the repo; preprocessor/decoder/joint only exist as .mlpackage in
-# the 2240ms drop and are compiled here with coremlcompiler.
+#   nemotron-asr-conversion/convert_models.sh --watch-only
 #
-# (The Core AI .aimodel variant of this script was reverted: the watchOS 27
-# beta's Core AI compiler has no m11 SoC backend — "Unsupported SoC (m11)" —
-# so the watch runs the proven CoreML pipeline instead.)
+# That builds whatever is missing from the .nemo and stages the watch set:
+# the split encoder (encoder_pre_encode + encoder_shard_0..3), preprocessor,
+# decoder and the fused decoder_joint_argmax, plus metadata.json/tokenizer.json.
+# Deliberately not staged: the bare joint (replaced by the fused decoder) and the
+# smart-spec joint_noencproj_batched/native_weights (their ~98 MB in-memory fp32
+# weights caused Neural Engine timeouts on the watch). Encoder models whose
+# weights and graph are unchanged are kept byte-for-byte, so the watch doesn't
+# recompile its Neural Engine programs. Details: the kit's README, "Apple Watch bundle".
+#
+# The watch runs CoreML only: Core AI can't compile for the watch SoC (m11).
+#
+# Usage:
+#   scripts/fetch-watch-asr-models.sh [extra convert_models.sh args, e.g. --dry-run, --force]
+#
+# The kit is expected next to this repo (../nemotron-asr-conversion); override with
+# NEMOTRON_CONVERSION_DIR=/path/to/nemotron-asr-conversion. Get it with:
+#   git clone https://github.com/smdesai/nemotron-asr-conversion.git
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$ROOT/Resources/Models/multilingual/2240ms"
+KIT="${NEMOTRON_CONVERSION_DIR:-$ROOT/../nemotron-asr-conversion}"
 DST="$ROOT/NemotronWatchModels"
 
-if [ ! -d "$SRC" ]; then
-  echo "ERROR: source models not found at $SRC"
+if [ ! -x "$KIT/convert_models.sh" ]; then
+  echo "ERROR: conversion kit not found at $KIT (expected convert_models.sh)." >&2
+  echo "       git clone https://github.com/smdesai/nemotron-asr-conversion.git \"$KIT\"" >&2
+  echo "       or set NEMOTRON_CONVERSION_DIR." >&2
   exit 1
 fi
 
-mkdir -p "$DST"
-echo "Staging CoreML models into $DST"
-
-# Clear previously staged content (regenerable copies; sources stay in Resources/).
-rm -rf "$DST"/*.aimodel "$DST"/*.mlmodelc "$DST"/mel_filterbank.f32 "$DST"/mel_window.f32
-
-# Pre-compiled split encoder: copy verbatim.
-COMPILED=(
-  encoder_pre_encode
-  encoder_shard_0
-  encoder_shard_1
-  encoder_shard_2
-  encoder_shard_3
-)
-for m in "${COMPILED[@]}"; do
-  if [ ! -d "$SRC/${m}.mlmodelc" ]; then
-    echo "ERROR: required model $SRC/${m}.mlmodelc missing"
-    exit 1
-  fi
-  cp -R "$SRC/${m}.mlmodelc" "$DST/"
-  echo "  + ${m}.mlmodelc (copied)"
-done
-
-# Package-only models: compile to .mlmodelc with coremlcompiler.
-PACKAGES=(
-  preprocessor
-  decoder
-  joint
-)
-for m in "${PACKAGES[@]}"; do
-  if [ ! -d "$SRC/${m}.mlpackage" ]; then
-    echo "ERROR: required model $SRC/${m}.mlpackage missing"
-    exit 1
-  fi
-  xcrun coremlcompiler compile "$SRC/${m}.mlpackage" "$DST/" > /dev/null
-  echo "  + ${m}.mlmodelc (compiled from .mlpackage)"
-done
-
-# Companion JSON.
-cp "$SRC/metadata.json" "$DST/"
-cp "$SRC/tokenizer.json" "$DST/"
-echo "  + metadata.json, tokenizer.json"
-
-echo "Total staged size:"
-du -sh "$DST"
+exec "$KIT/convert_models.sh" --watch-only --watch-dir "$DST" "$@"
