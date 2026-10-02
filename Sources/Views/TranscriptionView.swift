@@ -178,11 +178,11 @@ struct TranscriptionView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(transcriptText)
+                    Text(displayTranscript)
                         .font(.system(.body, design: .rounded))
+                        .foregroundStyle(engine.transcript.isEmpty ? Theme.secondaryText : .primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .accessibilityLabel(displayTranscript)
                         .id("transcriptEnd")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -201,6 +201,7 @@ struct TranscriptionView: View {
         .glassCard()
     }
 
+    /// The transcript, or a placeholder (dimmed) before anything is transcribed.
     private var displayTranscript: String {
         if engine.transcript.isEmpty {
             switch mode {
@@ -213,16 +214,6 @@ struct TranscriptionView: View {
             }
         }
         return engine.transcript
-    }
-
-    /// The transcript, or a dimmed placeholder before anything is transcribed.
-    private var transcriptText: AttributedString {
-        guard !engine.transcript.isEmpty else {
-            var placeholder = AttributedString(displayTranscript)
-            placeholder.foregroundColor = Theme.secondaryText
-            return placeholder
-        }
-        return AttributedString(engine.transcript)
     }
 
     // MARK: Microphone controls
@@ -276,15 +267,15 @@ private struct LiveBadge: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(Color(hex: 0xFF5E7E))
+                .fill(Theme.recordRed)
                 .frame(width: 7, height: 7)
                 .opacity(pulse ? 0.4 : 1)
             Text("LIVE")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color(hex: 0xFF5E7E))
+                .foregroundStyle(Theme.recordRed)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(Capsule().fill(Color(hex: 0xFF5E7E).opacity(0.15)))
+        .background(Capsule().fill(Theme.recordRed.opacity(0.15)))
         .onAppear {
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
                 pulse = true
@@ -320,7 +311,7 @@ private struct RecordButton: View {
                     )
                     .frame(width: 92, height: 92)
                     .shadow(
-                        color: (isRecording ? Color(hex: 0xFF5E7E) : Theme.aurora1).opacity(0.5),
+                        color: (isRecording ? Theme.recordRed : Theme.aurora1).opacity(0.5),
                         radius: 18, y: 6)
 
                 Image(systemName: isRecording ? "stop.fill" : "mic.fill")

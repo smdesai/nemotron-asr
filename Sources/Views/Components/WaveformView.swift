@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// A lightweight, GPU-friendly bar waveform that reacts to a live 0...1 level.
@@ -37,11 +38,12 @@ struct WaveformView: View {
         }
         .onReceive(ticker) { _ in
             // Push the current level on every tick so the meter keeps scrolling
-            // while listening; settle to the idle floor when not active.
+            // while listening. Idle: no updates (`decay` already settled the
+            // bars to the floor), so the view doesn't re-render at 20 Hz.
             // Perceptual emphasis (sqrt) lifts quiet/mid levels so the bars
-            // visibly swing instead of hugging the floor — audio changes are
-            // easy to see. Idle pushes the bare floor (no emphasis).
-            pushLevel(isActive ? sqrt(max(0, CGFloat(level))) : 0.04)
+            // visibly swing instead of hugging the floor.
+            guard isActive else { return }
+            pushLevel(sqrt(max(0, CGFloat(level))))
         }
         .onChange(of: isActive) { _, active in
             if !active { decay() }

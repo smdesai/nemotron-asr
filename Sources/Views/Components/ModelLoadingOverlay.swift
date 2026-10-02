@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Full-screen-ish overlay shown while models download / compile / load.
-/// Renders a determinate ring when a fraction is available, plus a phase label.
-struct ModelDownloadOverlay: View {
+/// Full-screen-ish overlay shown while the bundled models load / specialize.
+/// Renders a determinate ring for the preparation fraction, plus a phase label.
+struct ModelLoadingOverlay: View {
     var fraction: Double
     var message: String
 
@@ -39,7 +39,7 @@ struct ModelDownloadOverlay: View {
                     .animation(.default, value: message)
             }
 
-            Text("Loading the on-device model onto the Neural Engine.")
+            Text("Loading the on-device speech model.")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText.opacity(0.8))
                 .multilineTextAlignment(.center)
@@ -61,7 +61,7 @@ struct ModelFailureOverlay: View {
         VStack(spacing: 18) {
             Image(systemName: "exclamationmark.icloud")
                 .font(.system(size: 46, weight: .semibold))
-                .foregroundStyle(Color(hex: 0xFF5E7E))
+                .foregroundStyle(Theme.recordRed)
 
             VStack(spacing: 6) {
                 Text("Couldn't load the model")

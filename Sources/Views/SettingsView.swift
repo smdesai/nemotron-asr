@@ -46,7 +46,7 @@ struct SettingsView: View {
             cardHeader(
                 "Inference Backend",
                 systemImage: "cpu",
-                subtitle: "Choose the on-device runtime. Core AI is experimental and needs iOS 27."
+                subtitle: "Choose the on-device runtime."
             )
 
             Picker("Backend", selection: backendBinding) {
@@ -67,9 +67,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cardFill)
-                    )
+                    .cardBackground(cornerRadius: 10, stroke: nil)
                     .textSelection(.enabled)
             }
         }
@@ -99,7 +97,7 @@ struct SettingsView: View {
             )
             statusRow(
                 "System enabled", value: enabled ? "Yes" : "No",
-                tint: enabled ? Theme.aurora3 : Color(hex: 0xFF5E7E))
+                tint: enabled ? Theme.aurora3 : Theme.recordRed)
             statusRow("Last result", value: engine.liveActivityStatus, tint: Theme.secondaryText)
             if !enabled {
                 Label(
@@ -107,7 +105,7 @@ struct SettingsView: View {
                     systemImage: "exclamationmark.triangle"
                 )
                 .font(.caption)
-                .foregroundStyle(Color(hex: 0xFF5E7E))
+                .foregroundStyle(Theme.recordRed)
             }
         }
         .glassCard()
@@ -153,20 +151,13 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardFill)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
-                        Theme.cardStroke, lineWidth: 1))
+                .cardBackground()
             }
             .tint(.white)
 
             if settings.languageCode != nil {
                 Label(
-                    settings.language.isLatinScript
-                        ? "Uses the fast Latin-script model."
-                        : "Uses the full multilingual model.",
+                    "Pins the model to this language instead of auto-detecting.",
                     systemImage: "info.circle"
                 )
                 .font(.caption)
@@ -227,19 +218,11 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(
-                                    settings.chunkSize == size
-                                        ? Theme.aurora2.opacity(0.12) : Theme.cardFill)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(
-                                    settings.chunkSize == size
-                                        ? Theme.aurora2.opacity(0.5) : Theme.cardStroke,
-                                    lineWidth: 1)
-                        )
+                        .cardBackground(
+                            fill: settings.chunkSize == size
+                                ? Theme.aurora2.opacity(0.12) : Theme.cardFill,
+                            stroke: settings.chunkSize == size
+                                ? Theme.aurora2.opacity(0.5) : Theme.cardStroke)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.white)
@@ -280,7 +263,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             cardHeader("About", systemImage: "sparkles", subtitle: nil)
             Text(
-                "Powered by NVIDIA Nemotron Speech Streaming Multilingual 0.6B, running fully on-device via CoreML on the Apple Neural Engine."
+                "Powered by NVIDIA Nemotron Speech Streaming Multilingual 0.6B, running fully on-device with CoreML or Apple Core AI."
             )
             .font(.subheadline)
             .foregroundStyle(Theme.secondaryText)

@@ -30,7 +30,7 @@ final class LiveActivityController {
     /// How much trailing transcript to surface in the activity.
     private let tailLength = 280
 
-    /// Start a fresh activity for a new mic session. No-ops if the user has
+    /// Start a fresh activity for a new mic or file session. No-ops if the user has
     /// Live Activities disabled. Ends any stale activity left from a prior run.
     func start(language: String?, isListening: Bool = true) {
         let info = ActivityAuthorizationInfo()
@@ -78,10 +78,11 @@ final class LiveActivityController {
     /// flushes the final text regardless.
     func update(transcript: String, isListening: Bool, language: String?) {
         guard let activity else { return }
+        // Rate limit first: the tail is only computed for pushes that can go out.
+        let now = Date()
+        if now.timeIntervalSince(lastPush) < minInterval { return }
         let tail = Self.tail(of: transcript, max: tailLength)
         if tail == lastPushedTail { return }  // nothing new
-        let now = Date()
-        if now.timeIntervalSince(lastPush) < minInterval { return }  // rate limit
 
         lastPush = now
         lastPushedTail = tail
@@ -112,10 +113,14 @@ final class LiveActivityController {
     }
 
     /// Last `max` characters of the transcript, prefixed with an ellipsis when
-    /// truncated so the user can tell it's a tail.
+    /// truncated so the user can tell it's a tail. Walks back at most `max`
+    /// characters from the end (no O(n) `count` over the whole transcript).
     private static func tail(of transcript: String, max: Int) -> String {
-        guard transcript.count > max else { return transcript }
-        let start = transcript.index(transcript.endIndex, offsetBy: -max)
+        guard
+            let start = transcript.index(
+                transcript.endIndex, offsetBy: -max, limitedBy: transcript.startIndex),
+            start != transcript.startIndex
+        else { return transcript }
         return "…" + transcript[start...]
     }
 }

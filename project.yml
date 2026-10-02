@@ -24,17 +24,22 @@ targets:
     deploymentTarget: "27.0"
     sources:
       - path: Sources
-      # Vendored FluidAudio ASR core (the same standalone subset the watch
-      # compiles). Built directly into the app so there is NO dependency on the
-      # external FluidAudio Swift package — everything is self-contained here.
+        excludes:
+          # SwiftPM-library-only (NemotronASRCoreML): the public CoreML facade
+          # and its Hugging Face downloader. The app loads bundled models.
+          - CoreML/NemotronCoreMLTranscriber.swift
+          - CoreML/NemotronModelDownloader.swift
+      # Vendored Nemotron streaming ASR core (CoreML runtime, tokenizer, audio
+      # conversion) — the same standalone subset the watch compiles. Built
+      # directly into the app; no external package dependency.
       - path: NemotronWatch/Vendored
       # Shared with the widget extension: Live Activity attributes + Stop intent.
       - path: Shared
       - path: Resources/Assets.xcassets
-      # Bundled CoreML model variants. The repo is gated on HuggingFace, so the
-      # models ship inside the app and load from the bundle (no runtime
-      # download). `type: folder` adds a folder reference so the entire
-      # <ship>/<tier>ms/<model>.mlmodelc tree is copied verbatim.
+      # Bundled model variants (CoreML `coreml/` + Core AI `coreai/` per tier).
+      # The repo is gated on HuggingFace, so the models ship inside the app and
+      # load from the bundle (no runtime download). `type: folder` adds a folder
+      # reference so the entire <ship>/<tier>ms/ tree is copied verbatim.
       - path: Resources/Models
         type: folder
         buildPhase: resources
@@ -87,8 +92,8 @@ targets:
         SWIFT_VERSION: "5.0"
 
   # Live Activity widget extension: renders the transcription Live Activity on
-  # the lock screen + Dynamic Island. Links only system frameworks (no
-  # FluidAudio) and shares the Shared/ folder (ActivityAttributes + Stop intent)
+  # the lock screen + Dynamic Island. Links only system frameworks (no ASR
+  # code) and shares the Shared/ folder (ActivityAttributes + Stop intent)
   # with the app. Embedded into the app via the NemotronASR dependency above.
   NemotronASRWidgets:
     type: app-extension
@@ -110,10 +115,9 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_VERSION: "5.0"
 
-  # watchOS port. FluidAudio ships no watchOS slice, so this target VENDORS the
-  # needed FluidAudio source files (NemotronWatch/Vendored) and compiles them
-  # directly — it intentionally does NOT depend on the FluidAudio package. It
-  # runs the CoreML pipeline: the multilingual 2240ms split encoder + bare
+  # watchOS port. Compiles the vendored Nemotron ASR core
+  # (NemotronWatch/Vendored) directly, like the iOS app. It runs the CoreML
+  # pipeline: the multilingual 2240ms split encoder + bare
   # decoder/joint staged as pre-compiled .mlmodelc into NemotronWatchModels/
   # (see scripts/fetch-watch-asr-models.sh), loaded from the app bundle on
   # launch. (The Core AI path was abandoned for now: the watchOS 27 beta's

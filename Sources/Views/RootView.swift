@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Top-level shell: animated background + the main transcription screen,
-/// with the model-download overlay layered on top during preparation.
+/// with the model-loading overlay layered on top during preparation.
 struct RootView: View {
     @EnvironmentObject var engine: TranscriptionEngine
     @State private var showSettings = false
@@ -16,7 +16,7 @@ struct RootView: View {
             if case .preparing = engine.phase {
                 Color.black.opacity(0.45).ignoresSafeArea()
                     .transition(.opacity)
-                ModelDownloadOverlay(fraction: engine.prepFraction, message: engine.prepMessage)
+                ModelLoadingOverlay(fraction: engine.prepFraction, message: engine.prepMessage)
                     .transition(.scale.combined(with: .opacity))
             }
 

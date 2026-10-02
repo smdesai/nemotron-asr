@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct NemotronASRApp: App {
-    @StateObject private var settings = AppSettings()
+    @StateObject private var settings: AppSettings
     @StateObject private var engine: TranscriptionEngine
 
     init() {
