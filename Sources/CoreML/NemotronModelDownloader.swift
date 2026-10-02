@@ -11,12 +11,13 @@
 //        ├── metadata.json
 //        ├── tokenizer.json
 //        ├── preprocessor.mlmodelc/...
-//        ├── encoder_pre_encode.mlmodelc/... + encoder_shard_0..3.mlmodelc/...   (split encoder)
-//        │   — or — encoder.mlmodelc/...                                        (monolithic)
-//        ├── decoder.mlmodelc/, joint.mlmodelc/, decoder_joint*.mlmodelc/       (whatever the tier ships)
+//        ├── encoder_pre_encode.mlmodelc/... + encoder_shard_0..3.mlmodelc/...   (split encoder, required)
+//        ├── decoder.mlmodelc/, joint*.mlmodelc/, decoder_joint*.mlmodelc/      (whatever the tier ships)
+//        ├── native_weights/...                 (smart-spec encoder projection, if shipped)
 //        └── .complete                          (sentinel — written last)
 //
-//  The `coreai/` subtree (Core AI .aimodel bundles) is never downloaded here.
+//  The `coreai/` subtree (Core AI .aimodel bundles) and any legacy monolithic
+//  `encoder.mlmodelc` are never downloaded here.
 //
 
 import Foundation
@@ -45,6 +46,8 @@ public enum NemotronModelDownloadError: LocalizedError {
     case invalidResponse(String)
     /// The repository has no `<ship>/<tier>ms/` directory (or it is empty).
     case variantNotAvailable(ship: String, tier: String)
+    /// The variant is published but lacks required files (e.g. the split encoder).
+    case incompleteVariant(ship: String, tier: String, missing: [String])
 
     public var errorDescription: String? {
         switch self {
@@ -53,6 +56,9 @@ public enum NemotronModelDownloadError: LocalizedError {
         case .invalidResponse(let m): return "Invalid response: \(m)"
         case .variantNotAvailable(let ship, let tier):
             return "Nemotron ASR variant \(ship)/\(tier) is not published in \(NemotronModelDownloader.repoId)."
+        case .incompleteVariant(let ship, let tier, let missing):
+            return
+                "Nemotron ASR variant \(ship)/\(tier) is missing required files: \(missing.joined(separator: ", "))."
         }
     }
 }
@@ -202,10 +208,10 @@ public final class NemotronModelDownloader: Sendable {
     }
 
     /// Lists the files of `<ship>/<tier>` that the CoreML runtime needs: `metadata.json`,
-    /// `tokenizer.json` and every `*.mlmodelc` tree, minus `coreai/` and minus the monolithic
-    /// `encoder.mlmodelc` when the complete split encoder (pre-encode + 4 shards) is present —
-    /// the runtime prefers the split path, so the monolithic one would be dead weight.
-    /// Returns an empty array when the directory does not exist.
+    /// `tokenizer.json`, every `*.mlmodelc` tree except the unused monolithic
+    /// `encoder.mlmodelc`, and `native_weights/`; never `coreai/`. Returns an empty array
+    /// when the directory does not exist; throws `incompleteVariant` when the split
+    /// encoder (encoder_pre_encode + encoder_shard_0..3) is not all present.
     private func fetchFileList(ship: String, tier: String) async throws -> [RemoteFile] {
         let u = URL(string: "https://huggingface.co/api/models")!
             .appendingPathComponent(Self.repoId)
@@ -246,18 +252,21 @@ public final class NemotronModelDownloader: Sendable {
             let rel = String(entry.path.dropFirst(prefix.count))
             guard !rel.isEmpty, !rel.hasPrefix("coreai/") else { continue }
             let top = rel.split(separator: "/").first.map(String.init) ?? rel
-            let wanted = top == "metadata.json" || top == "tokenizer.json" || top.hasSuffix(".mlmodelc")
+            let wanted =
+                top == "metadata.json" || top == "tokenizer.json" || top == "native_weights"
+                || (top.hasSuffix(".mlmodelc") && top != "encoder.mlmodelc")
             guard wanted else { continue }
             all.append(RemoteFile(relativePath: rel, size: entry.size ?? 0))
         }
+        guard !all.isEmpty else { return [] }
 
         let topLevel = Set(all.map { $0.relativePath.split(separator: "/").first.map(String.init) ?? "" })
-        let hasSplitEncoder =
-            topLevel.contains("encoder_pre_encode.mlmodelc")
-            && (0 ..< 4).allSatisfy { topLevel.contains("encoder_shard_\($0).mlmodelc") }
-        var out = hasSplitEncoder ? all.filter { !$0.relativePath.hasPrefix("encoder.mlmodelc/") } : all
-        out.sort { $0.relativePath < $1.relativePath }
-        return out
+        let required = ["encoder_pre_encode.mlmodelc"] + (0 ..< 4).map { "encoder_shard_\($0).mlmodelc" }
+        let missing = required.filter { !topLevel.contains($0) }
+        guard missing.isEmpty else {
+            throw NemotronModelDownloadError.incompleteVariant(ship: ship, tier: tier, missing: missing)
+        }
+        return all.sorted { $0.relativePath < $1.relativePath }
     }
 
     private func urlSession() -> URLSession {

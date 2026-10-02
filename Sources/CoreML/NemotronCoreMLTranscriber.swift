@@ -64,7 +64,9 @@ public final class NemotronCoreMLTranscriber {
     ///     ship when it exists; everything else uses `multilingual`.
     ///   - chunkMs: Streaming chunk tier (560, 1120, 2240 or 4480).
     ///   - modelsRoot: Directory already containing `<ship>/<tier>ms/...` (each tier either
-    ///     flat or with a `coreml/` subfolder). Pass nil to download from the Hugging Face Hub.
+    ///     flat or with a `coreml/` subfolder, holding the split encoder
+    ///     `encoder_pre_encode` + `encoder_shard_0..3` plus a decode path). Pass nil to
+    ///     download from the Hugging Face Hub.
     public init(languageCode: String? = nil, chunkMs: Int = 2240, modelsRoot: URL? = nil) {
         self.languageCode = languageCode
         self.chunkMs = chunkMs
@@ -162,8 +164,11 @@ public final class NemotronCoreMLTranscriber {
     public func stopListening() async -> String {
         guard isListening else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+        // Stop the capture (finishing the sample stream), then let the mic task
+        // drain the blocks already buffered before `finish()` touches the same
+        // streaming state — cancelling could cut a chunk off mid-encode.
         await micCapture?.stop()
-        micTask?.cancel()
+        await micTask?.value
         micTask = nil
         micCapture = nil
 
