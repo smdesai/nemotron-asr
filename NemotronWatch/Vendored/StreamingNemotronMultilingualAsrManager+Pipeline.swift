@@ -994,7 +994,7 @@ extension StreamingNemotronMultilingualAsrManager {
                     throw ASRError.processingFailed(
                         "encoder_shard_\(idx) failed to produce encoded")
                 }
-                return encoded
+                return try Self.widenToFloat32(encoded)
             }
             guard let nextHidden = output.featureValue(for: "hidden_out")?.multiArrayValue else {
                 throw ASRError.processingFailed("encoder_shard_\(idx) failed to produce hidden_out")
@@ -1003,6 +1003,32 @@ extension StreamingNemotronMultilingualAsrManager {
         }
 
         return nil
+    }
+
+    /// fp16-I/O shard builds (`build_split_preencode_ane_probe.py --io-fp16`) keep
+    /// hidden + caches fp16 end to end, which removes the per-chunk fp32<->fp16
+    /// casts of every cache tensor. Several decode paths (e.g. `fillEncoderStep`)
+    /// read `encoded` as fp32, so widen just the final [1, 1024, T] output once
+    /// per chunk (~28k values) into a dense fp32 array. fp32 outputs pass through.
+    nonisolated internal static func widenToFloat32(_ array: MLMultiArray) throws -> MLMultiArray {
+        guard array.dataType == .float16 else { return array }
+        let shape = array.shape.map { $0.intValue }
+        let strides = array.strides.map { $0.intValue }
+        let out = try MLMultiArray(shape: array.shape, dataType: .float32)
+        let src = array.dataPointer.bindMemory(to: UInt16.self, capacity: array.count)
+        let dst = out.dataPointer.bindMemory(to: Float.self, capacity: out.count)
+        let dstStrides = out.strides.map { $0.intValue }
+        precondition(shape.count == 3, "encoded must be rank 3 [1, D, T]")
+        for b in 0 ..< shape[0] {
+            for d in 0 ..< shape[1] {
+                let s = b * strides[0] + d * strides[1]
+                let o = b * dstStrides[0] + d * dstStrides[1]
+                for t in 0 ..< shape[2] {
+                    dst[o + t * dstStrides[2]] = Float(Float16(bitPattern: src[s + t * strides[2]]))
+                }
+            }
+        }
+        return out
     }
 
     /// Compute encoder_proj on CPU via cblas_sgemm using the joint.enc

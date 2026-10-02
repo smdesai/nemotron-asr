@@ -312,10 +312,19 @@ extension StreamingNemotronMultilingualAsrManager {
                 "No decode path in \(directory.path): provide a fused decoder_joint (B1/B3) "
                     + "or both bare decoder.mlmodelc + joint.mlmodelc.")
         }
-        if jointNoEncProjBatched != nil && (decoder == nil || joint == nil) {
-            throw ASRError.processingFailed(
-                "Smart-spec asset joint_noencproj_batched present but bare decoder/joint missing "
-                    + "— K=4 needs both. Either add them or remove the smart-spec asset.")
+        // Smart-spec needs the bare decoder (one call per K-frame window for
+        // dec_out). Its post-hit drain tries B3 → B2 → B1 before the bare
+        // decoder+joint branch (the only `self.joint!`), so the bare joint is
+        // required only when neither B2 nor B1 is present (B3 alone can fall
+        // through: it also needs an encoder_proj).
+        if jointNoEncProjBatched != nil {
+            let drainHasFused = decoderJointArgmax != nil || decoderJoint != nil
+            if decoder == nil || (joint == nil && !drainHasFused) {
+                throw ASRError.processingFailed(
+                    "Smart-spec asset joint_noencproj_batched present but its decode deps are missing "
+                        + "— needs decoder.mlmodelc, plus joint.mlmodelc unless "
+                        + "decoder_joint_argmax/decoder_joint is present.")
+            }
         }
         if decoder == nil && joint == nil {
             logger.info("Lean B1 ship: bare decoder/joint omitted; using fused decode path only.")
