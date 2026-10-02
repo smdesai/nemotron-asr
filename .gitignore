@@ -8,8 +8,9 @@ Resources/Models
 /thoughts/
 *~
 
-# Xcode / build artifacts
+# Xcode / SwiftPM build artifacts
 build/
+.build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
