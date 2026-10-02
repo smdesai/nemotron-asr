@@ -155,6 +155,28 @@ final class TranscriptionEngine: ObservableObject {
     /// loading the bundled CoreML variant if needed. Safe to call repeatedly —
     /// reuses cached bundles and only reloads when the variant changes.
     func prepareModelIfNeeded() async {
+        // Serialize: a second caller arriving mid-load (e.g. the view's .task and
+        // BenchmarkRunner at launch) used to start a full second load in parallel,
+        // doubling Core AI specialization memory (std::bad_alloc for the monolithic
+        // encoder). Wait for the in-flight preparation, then re-check (cheap when
+        // already ready for the current variant).
+        while let inFlight = prepareInFlight {
+            await inFlight.value
+            // Clear a FINISHED task ourselves: awaiting a completed Task returns
+            // without suspending, so if we only waited for its creator to clear
+            // it, this loop would spin on the main actor and starve the creator
+            // (livelock: models loaded, prepare never returns).
+            if prepareInFlight == inFlight { prepareInFlight = nil }
+        }
+        let task = Task { await self.prepareModelIfNeededSerialized() }
+        prepareInFlight = task
+        await task.value
+        if prepareInFlight == task { prepareInFlight = nil }
+    }
+
+    private var prepareInFlight: Task<Void, Never>?
+
+    private func prepareModelIfNeededSerialized() async {
         let code = settings.languageCode
         let chunkMs = settings.chunkSize.rawValue
 
